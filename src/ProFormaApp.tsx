@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Plus, Trash2, Download, RotateCcw } from 'lucide-react'
+import { Plus, Trash2, Download, RotateCcw, Printer } from 'lucide-react'
 
 // ============================================================================
 // TYPES
@@ -7,6 +7,7 @@ import { Plus, Trash2, Download, RotateCcw } from 'lucide-react'
 
 interface Unit {
   id: string
+  unitNumber: string
   bedrooms: number
   bathrooms: number
   sqft: number
@@ -15,64 +16,113 @@ interface Unit {
 
 interface Inputs {
   propertyName: string
+  propertyAddress: string
+  
+  // Acquisition
   purchasePrice: number
-  capitalImprovements: number
+  closingCosts: number
+  immediateRepairs: number
+  
+  // Financing
   downPaymentPct: number
   interestRate: number
-  loanTerm: number
-  closingCostsPct: number
+  loanTermYears: number
+  
+  // Units
   units: Unit[]
+  
+  // Other Income
+  laundryIncome: number
+  parkingIncome: number
+  storageIncome: number
   otherIncome: number
-  propertyTaxes: number
+  
+  // Operating Expenses
+  realEstateTaxes: number
   insurance: number
-  repairs: number
-  utilities: number
-  managementPct: number
+  water: number
+  sewer: number
+  gas: number
+  electric: number
   trash: number
-  landscape: number
-  reserves: number
+  landscaping: number
+  snowRemoval: number
+  repairsMaintenance: number
+  pestControl: number
+  managementPct: number
+  legalAccounting: number
+  advertising: number
+  miscellaneous: number
+  replacementReserves: number
+  
+  // Assumptions
   vacancyPct: number
-  rentGrowth: number
-  expenseGrowth: number
-  holdYears: number
+  annualRentIncrease: number
+  annualExpenseIncrease: number
+  projectionYears: number
   exitCapRate: number
 }
 
+// ============================================================================
+// DEFAULT VALUES - Croissant Park Example
+// ============================================================================
+
+const createDefaultUnits = (): Unit[] => {
+  const units: Unit[] = []
+  for (let i = 1; i <= 12; i++) {
+    const is2Bed = i === 4 || i === 10
+    units.push({
+      id: String(i),
+      unitNumber: `432-${i}`,
+      bedrooms: is2Bed ? 2 : 1,
+      bathrooms: 1,
+      sqft: is2Bed ? 775 : 550,
+      rent: is2Bed ? 1800 : (i === 7 ? 1550 : 1600),
+    })
+  }
+  return units
+}
+
 const defaultInputs: Inputs = {
-  propertyName: '',
+  propertyName: 'CROISSANT PARK APARTMENTS',
+  propertyAddress: 'Building 155 SE 5th Ct - Vista Court Apartments',
+  
   purchasePrice: 2300000,
-  capitalImprovements: 0,
+  closingCosts: 46000,
+  immediateRepairs: 0,
+  
   downPaymentPct: 25,
-  interestRate: 7,
-  loanTerm: 30,
-  closingCostsPct: 2,
-  units: [
-    { id: '1', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 },
-    { id: '2', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 },
-    { id: '3', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 },
-    { id: '4', bedrooms: 2, bathrooms: 1, sqft: 775, rent: 1800 },
-    { id: '5', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 },
-    { id: '6', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 },
-    { id: '7', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1550 },
-    { id: '8', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 },
-    { id: '9', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 },
-    { id: '10', bedrooms: 2, bathrooms: 1, sqft: 775, rent: 1800 },
-    { id: '11', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 },
-    { id: '12', bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 },
-  ],
-  otherIncome: 208,
-  propertyTaxes: 47915,
+  interestRate: 7.0,
+  loanTermYears: 30,
+  
+  units: createDefaultUnits(),
+  
+  laundryIncome: 208.33,
+  parkingIncome: 0,
+  storageIncome: 0,
+  otherIncome: 0,
+  
+  realEstateTaxes: 47915,
   insurance: 11000,
-  repairs: 4800,
-  utilities: 10300,
-  managementPct: 5,
+  water: 4000,
+  sewer: 2000,
+  gas: 1500,
+  electric: 2800,
   trash: 2400,
-  landscape: 2400,
-  reserves: 0,
+  landscaping: 2400,
+  snowRemoval: 0,
+  repairsMaintenance: 4800,
+  pestControl: 600,
+  managementPct: 5,
+  legalAccounting: 1200,
+  advertising: 500,
+  miscellaneous: 1000,
+  replacementReserves: 1800,
+  
   vacancyPct: 5,
-  rentGrowth: 3,
-  expenseGrowth: 3,
-  holdYears: 10,
+  annualRentIncrease: 3,
+  annualExpenseIncrease: 3,
+  projectionYears: 10,
   exitCapRate: 6,
 }
 
@@ -80,44 +130,74 @@ const defaultInputs: Inputs = {
 // HELPERS
 // ============================================================================
 
-const fmt = (n: number, dec = 0) => n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec })
-const fmtMoney = (n: number, dec = 0) => '$' + fmt(Math.abs(n), dec)
-const fmtPct = (n: number, dec = 2) => fmt(n, dec) + '%'
+const fmt = (n: number): string => {
+  if (isNaN(n) || !isFinite(n)) return '0'
+  return Math.round(n).toLocaleString('en-US')
+}
+
+const fmtDec = (n: number, dec: number = 2): string => {
+  if (isNaN(n) || !isFinite(n)) return '0.00'
+  return n.toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec })
+}
 
 // ============================================================================
-// MAIN APP
+// MAIN COMPONENT
 // ============================================================================
 
 export function ProFormaApp() {
   const [inputs, setInputs] = useState<Inputs>(() => {
-    const saved = localStorage.getItem('proforma-v2')
-    return saved ? { ...defaultInputs, ...JSON.parse(saved) } : defaultInputs
+    const saved = localStorage.getItem('proforma-v3')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        return { ...defaultInputs, ...parsed }
+      } catch {
+        return defaultInputs
+      }
+    }
+    return defaultInputs
   })
 
   useEffect(() => {
-    localStorage.setItem('proforma-v2', JSON.stringify(inputs))
+    localStorage.setItem('proforma-v3', JSON.stringify(inputs))
   }, [inputs])
 
-  const set = <K extends keyof Inputs>(k: K, v: Inputs[K]) => setInputs(p => ({ ...p, [k]: v }))
-  const setNum = (k: keyof Inputs, v: string) => set(k, parseFloat(v) || 0)
+  const set = <K extends keyof Inputs>(key: K, value: Inputs[K]) => {
+    setInputs(prev => ({ ...prev, [key]: value }))
+  }
 
-  const updateUnit = (id: string, field: keyof Unit, value: number) => {
-    set('units', inputs.units.map(u => u.id === id ? { ...u, [field]: value } : u))
+  const setNum = (key: keyof Inputs, value: string) => {
+    const num = parseFloat(value) || 0
+    set(key, num as Inputs[typeof key])
+  }
+
+  const updateUnit = (id: string, field: keyof Unit, value: string | number) => {
+    set('units', inputs.units.map(u => 
+      u.id === id ? { ...u, [field]: typeof value === 'string' && field !== 'unitNumber' ? parseFloat(value) || 0 : value } : u
+    ))
   }
 
   const addUnit = () => {
-    const id = String(Date.now())
-    set('units', [...inputs.units, { id, bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1600 }])
+    const newNum = inputs.units.length + 1
+    set('units', [...inputs.units, {
+      id: String(Date.now()),
+      unitNumber: `Unit ${newNum}`,
+      bedrooms: 1,
+      bathrooms: 1,
+      sqft: 550,
+      rent: 1500,
+    }])
   }
 
   const removeUnit = (id: string) => {
-    if (inputs.units.length > 1) set('units', inputs.units.filter(u => u.id !== id))
+    if (inputs.units.length > 1) {
+      set('units', inputs.units.filter(u => u.id !== id))
+    }
   }
 
   const reset = () => {
-    if (confirm('Reset all values to defaults?')) {
+    if (confirm('Reset all values to the example property?')) {
       setInputs(defaultInputs)
-      localStorage.removeItem('proforma-v2')
     }
   }
 
@@ -126,113 +206,177 @@ export function ProFormaApp() {
   // ============================================================================
 
   const calc = useMemo(() => {
-    const { units, purchasePrice, capitalImprovements, downPaymentPct, interestRate, loanTerm,
-            closingCostsPct, otherIncome, propertyTaxes, insurance, repairs, utilities,
-            managementPct, trash, landscape, reserves, vacancyPct, rentGrowth, expenseGrowth,
-            holdYears, exitCapRate } = inputs
+    const {
+      purchasePrice, closingCosts, immediateRepairs,
+      downPaymentPct, interestRate, loanTermYears,
+      units,
+      laundryIncome, parkingIncome, storageIncome, otherIncome,
+      realEstateTaxes, insurance, water, sewer, gas, electric, trash,
+      landscaping, snowRemoval, repairsMaintenance, pestControl,
+      managementPct, legalAccounting, advertising, miscellaneous, replacementReserves,
+      vacancyPct, annualRentIncrease, annualExpenseIncrease, projectionYears, exitCapRate
+    } = inputs
 
-    // Unit metrics
-    const totalSqft = units.reduce((s, u) => s + u.sqft, 0)
-    const monthlyRent = units.reduce((s, u) => s + u.rent, 0)
+    // === PROPERTY SUMMARY ===
+    const totalUnits = units.length
+    const totalSqft = units.reduce((sum, u) => sum + u.sqft, 0)
+    const monthlyRent = units.reduce((sum, u) => sum + u.rent, 0)
     const annualRent = monthlyRent * 12
-    const annualOther = otherIncome * 12
-    const gpi = annualRent + annualOther
-    
-    // Acquisition
-    const closingCosts = purchasePrice * (closingCostsPct / 100)
-    const totalAcquisition = purchasePrice + closingCosts + capitalImprovements
     const pricePerSqft = totalSqft > 0 ? purchasePrice / totalSqft : 0
-    
-    // Financing
+    const pricePerUnit = totalUnits > 0 ? purchasePrice / totalUnits : 0
+
+    // === OTHER INCOME ===
+    const monthlyOtherIncome = laundryIncome + parkingIncome + storageIncome + otherIncome
+    const annualOtherIncome = monthlyOtherIncome * 12
+
+    // === GROSS POTENTIAL INCOME ===
+    const grossPotentialIncome = annualRent + annualOtherIncome
+
+    // === ACQUISITION ===
+    const totalAcquisitionCost = purchasePrice + closingCosts + immediateRepairs
+
+    // === FINANCING ===
     const downPayment = purchasePrice * (downPaymentPct / 100)
     const loanAmount = purchasePrice - downPayment
     const monthlyRate = interestRate / 100 / 12
-    const numPayments = loanTerm * 12
-    const monthlyDebt = loanAmount > 0 && monthlyRate > 0
+    const numPayments = loanTermYears * 12
+    const monthlyMortgage = loanAmount > 0 && monthlyRate > 0
       ? loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / (Math.pow(1 + monthlyRate, numPayments) - 1)
       : 0
-    const annualDebt = monthlyDebt * 12
-    
-    // Total equity
-    const equity = downPayment + closingCosts + capitalImprovements
-    
-    // Year-by-year
+    const annualDebtService = monthlyMortgage * 12
+    const totalCashRequired = downPayment + closingCosts + immediateRepairs
+
+    // === OPERATING EXPENSES (Year 1) ===
+    const utilities = water + sewer + gas + electric
+    const baseExpenses = {
+      realEstateTaxes,
+      insurance,
+      water,
+      sewer,
+      gas,
+      electric,
+      trash,
+      landscaping,
+      snowRemoval,
+      repairsMaintenance,
+      pestControl,
+      legalAccounting,
+      advertising,
+      miscellaneous,
+      replacementReserves,
+    }
+
+    // === YEAR-BY-YEAR PROJECTION ===
     const years: {
       year: number
-      rent: number
+      // Income
+      scheduledRent: number
+      otherIncome: number
+      grossPotentialIncome: number
       vacancy: number
-      egi: number
-      taxes: number
+      effectiveGrossIncome: number
+      // Expenses
+      realEstateTaxes: number
       insurance: number
-      repairs: number
       utilities: number
-      management: number
       trash: number
-      landscape: number
-      reserves: number
-      opex: number
-      noi: number
-      leasing: number
-      ti: number
-      capReserves: number
-      totalCapex: number
-      cfBeforeDebt: number
-      debt: number
-      cfAfterDebt: number
-      coc: number
+      landscaping: number
+      snowRemoval: number
+      repairsMaintenance: number
+      pestControl: number
+      management: number
+      legalAccounting: number
+      advertising: number
+      miscellaneous: number
+      replacementReserves: number
+      totalOperatingExpenses: number
+      // Results
+      netOperatingIncome: number
+      debtService: number
+      cashFlowBeforeTax: number
     }[] = []
-    
-    for (let i = 0; i <= holdYears; i++) {
-      const rentGrowthFactor = Math.pow(1 + rentGrowth / 100, i)
-      const expGrowthFactor = Math.pow(1 + expenseGrowth / 100, i)
-      
-      const rent = gpi * rentGrowthFactor
-      const vacancy = rent * (vacancyPct / 100)
-      const egi = rent - vacancy
-      
-      const taxes = propertyTaxes * expGrowthFactor
-      const ins = insurance * expGrowthFactor
-      const rep = repairs * expGrowthFactor
-      const util = utilities * expGrowthFactor
-      const mgmt = egi * (managementPct / 100)
-      const trsh = trash * expGrowthFactor
-      const land = landscape * expGrowthFactor
-      const res = reserves * expGrowthFactor
-      
-      const opex = taxes + ins + rep + util + mgmt + trsh + land + res
-      const noi = egi - opex
-      
-      // Capital costs (simplified)
-      const leasing = egi * 0.05
-      const ti = 1000
-      const capReserves = 1800
-      const totalCapex = leasing + ti + capReserves
-      
-      const cfBeforeDebt = noi - totalCapex
-      const cfAfterDebt = cfBeforeDebt - annualDebt
-      const coc = equity > 0 ? (cfAfterDebt / equity) * 100 : 0
-      
+
+    const currentYear = new Date().getFullYear()
+
+    for (let i = 0; i <= projectionYears; i++) {
+      const rentGrowth = Math.pow(1 + annualRentIncrease / 100, i)
+      const expenseGrowth = Math.pow(1 + annualExpenseIncrease / 100, i)
+
+      const scheduledRent = annualRent * rentGrowth
+      const yearOtherIncome = annualOtherIncome * rentGrowth
+      const gpi = scheduledRent + yearOtherIncome
+      const vacancy = gpi * (vacancyPct / 100)
+      const egi = gpi - vacancy
+
+      const yearExpenses = {
+        realEstateTaxes: baseExpenses.realEstateTaxes * expenseGrowth,
+        insurance: baseExpenses.insurance * expenseGrowth,
+        utilities: utilities * expenseGrowth,
+        trash: baseExpenses.trash * expenseGrowth,
+        landscaping: baseExpenses.landscaping * expenseGrowth,
+        snowRemoval: baseExpenses.snowRemoval * expenseGrowth,
+        repairsMaintenance: baseExpenses.repairsMaintenance * expenseGrowth,
+        pestControl: baseExpenses.pestControl * expenseGrowth,
+        management: egi * (managementPct / 100),
+        legalAccounting: baseExpenses.legalAccounting * expenseGrowth,
+        advertising: baseExpenses.advertising * expenseGrowth,
+        miscellaneous: baseExpenses.miscellaneous * expenseGrowth,
+        replacementReserves: baseExpenses.replacementReserves * expenseGrowth,
+      }
+
+      const totalOpex = Object.values(yearExpenses).reduce((sum, v) => sum + v, 0)
+      const noi = egi - totalOpex
+      const cashFlow = noi - annualDebtService
+
       years.push({
-        year: 2024 + i,
-        rent, vacancy, egi,
-        taxes, insurance: ins, repairs: rep, utilities: util, management: mgmt, 
-        trash: trsh, landscape: land, reserves: res,
-        opex, noi,
-        leasing, ti, capReserves, totalCapex,
-        cfBeforeDebt, debt: annualDebt, cfAfterDebt, coc
+        year: currentYear + i,
+        scheduledRent,
+        otherIncome: yearOtherIncome,
+        grossPotentialIncome: gpi,
+        vacancy,
+        effectiveGrossIncome: egi,
+        ...yearExpenses,
+        totalOperatingExpenses: totalOpex,
+        netOperatingIncome: noi,
+        debtService: annualDebtService,
+        cashFlowBeforeTax: cashFlow,
       })
     }
-    
+
+    // === KEY METRICS ===
     const year1 = years[0]
-    const exitNOI = years[holdYears]?.noi || 0
-    const exitValue = exitCapRate > 0 ? exitNOI / (exitCapRate / 100) : 0
-    
+    const capRate = purchasePrice > 0 ? (year1.netOperatingIncome / purchasePrice) * 100 : 0
+    const cashOnCash = totalCashRequired > 0 ? (year1.cashFlowBeforeTax / totalCashRequired) * 100 : 0
+    const grossRentMultiplier = annualRent > 0 ? purchasePrice / annualRent : 0
+    const dscr = annualDebtService > 0 ? year1.netOperatingIncome / annualDebtService : 0
+    const expenseRatio = year1.effectiveGrossIncome > 0 ? (year1.totalOperatingExpenses / year1.effectiveGrossIncome) * 100 : 0
+
+    // === EXIT ===
+    const exitYearNOI = years[projectionYears]?.netOperatingIncome || 0
+    const exitValue = exitCapRate > 0 ? exitYearNOI / (exitCapRate / 100) : 0
+
     return {
-      totalSqft, monthlyRent, annualRent, gpi, pricePerSqft,
-      closingCosts, totalAcquisition, downPayment, loanAmount,
-      monthlyDebt, annualDebt, equity, years,
-      capRate: purchasePrice > 0 ? (year1.noi / purchasePrice) * 100 : 0,
-      coc: year1.coc,
+      totalUnits,
+      totalSqft,
+      monthlyRent,
+      annualRent,
+      pricePerSqft,
+      pricePerUnit,
+      monthlyOtherIncome,
+      annualOtherIncome,
+      grossPotentialIncome,
+      totalAcquisitionCost,
+      downPayment,
+      loanAmount,
+      monthlyMortgage,
+      annualDebtService,
+      totalCashRequired,
+      years,
+      capRate,
+      cashOnCash,
+      grossRentMultiplier,
+      dscr,
+      expenseRatio,
       exitValue,
     }
   }, [inputs])
@@ -242,273 +386,447 @@ export function ProFormaApp() {
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-[#1a1f2e] text-slate-100 font-sans">
-      {/* Header */}
-      <div className="bg-[#141821] border-b border-slate-700 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <div className="text-emerald-400 text-2xl font-bold tracking-tight">PRO FORMA</div>
-          <input
-            type="text"
-            value={inputs.propertyName}
-            onChange={e => set('propertyName', e.target.value)}
-            placeholder="Property Name"
-            className="bg-transparent border-b border-slate-600 px-2 py-1 text-lg font-medium focus:outline-none focus:border-emerald-400"
-          />
+    <div className="min-h-screen bg-white text-gray-900 print:bg-white">
+      {/* HEADER */}
+      <header className="bg-[#1e3a5f] text-white px-6 py-4 print:bg-white print:text-black print:border-b-2 print:border-black">
+        <div className="max-w-[1400px] mx-auto flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">INVESTMENT PRO FORMA</h1>
+            <p className="text-blue-200 text-sm print:text-gray-600">Real Estate Investment Analysis</p>
+          </div>
+          <div className="flex gap-3 print:hidden">
+            <button onClick={reset} className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-sm">
+              <RotateCcw size={16} /> Reset
+            </button>
+            <button onClick={() => window.print()} className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-sm">
+              <Printer size={16} /> Print
+            </button>
+            <button className="flex items-center gap-2 px-4 py-2 bg-emerald-500 hover:bg-emerald-400 rounded text-sm font-medium">
+              <Download size={16} /> Export PDF
+            </button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button onClick={reset} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-slate-700 hover:bg-slate-600 rounded">
-            <RotateCcw size={14} /> Reset
-          </button>
-          <button className="flex items-center gap-1 px-3 py-1.5 text-sm bg-emerald-600 hover:bg-emerald-500 rounded font-medium">
-            <Download size={14} /> Export
-          </button>
-        </div>
-      </div>
+      </header>
 
-      <div className="max-w-[1800px] mx-auto p-4 space-y-6">
+      <main className="max-w-[1400px] mx-auto p-6 space-y-8">
         
-        {/* TOP SECTION: Property Summary + Rent Roll */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          
-          {/* RENT ROLL TABLE */}
-          <div className="bg-[#141821] rounded-lg border border-slate-700 overflow-hidden">
-            <div className="bg-emerald-600 text-white px-4 py-2 flex items-center justify-between">
-              <span className="font-semibold text-sm uppercase tracking-wide">Rent Roll</span>
-              <button onClick={addUnit} className="flex items-center gap-1 text-sm hover:bg-emerald-500 px-2 py-1 rounded">
-                <Plus size={14} /> Add Unit
-              </button>
+        {/* PROPERTY IDENTIFICATION */}
+        <section className="bg-gray-50 border border-gray-300 rounded-lg overflow-hidden">
+          <div className="bg-[#1e3a5f] text-white px-4 py-2 font-semibold text-lg">
+            PROPERTY IDENTIFICATION
+          </div>
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Property Name</label>
+              <input
+                type="text"
+                value={inputs.propertyName}
+                onChange={e => set('propertyName', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded text-lg font-semibold bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
             </div>
-            <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-800 sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2 text-left text-slate-400 font-medium">Unit</th>
-                    <th className="px-3 py-2 text-center text-slate-400 font-medium">Bed</th>
-                    <th className="px-3 py-2 text-center text-slate-400 font-medium">Bath</th>
-                    <th className="px-3 py-2 text-right text-slate-400 font-medium">SF</th>
-                    <th className="px-3 py-2 text-right text-slate-400 font-medium">Rent</th>
-                    <th className="px-3 py-2 text-right text-slate-400 font-medium">$/SF</th>
-                    <th className="px-3 py-2"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700">
-                  {inputs.units.map((u, i) => (
-                    <tr key={u.id} className="hover:bg-slate-800/50">
-                      <td className="px-3 py-1.5 text-slate-300">{i + 1}</td>
-                      <td className="px-3 py-1.5">
-                        <input type="number" value={u.bedrooms} onChange={e => updateUnit(u.id, 'bedrooms', +e.target.value)}
-                          className="w-12 bg-transparent text-center border-b border-transparent hover:border-slate-600 focus:border-emerald-400 focus:outline-none" />
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <input type="number" value={u.bathrooms} onChange={e => updateUnit(u.id, 'bathrooms', +e.target.value)}
-                          className="w-12 bg-transparent text-center border-b border-transparent hover:border-slate-600 focus:border-emerald-400 focus:outline-none" />
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <input type="number" value={u.sqft} onChange={e => updateUnit(u.id, 'sqft', +e.target.value)}
-                          className="w-16 bg-transparent text-right border-b border-transparent hover:border-slate-600 focus:border-emerald-400 focus:outline-none" />
-                      </td>
-                      <td className="px-3 py-1.5">
-                        <div className="flex items-center justify-end">
-                          <span className="text-slate-500">$</span>
-                          <input type="number" value={u.rent} onChange={e => updateUnit(u.id, 'rent', +e.target.value)}
-                            className="w-20 bg-transparent text-right border-b border-transparent hover:border-slate-600 focus:border-emerald-400 focus:outline-none" />
-                        </div>
-                      </td>
-                      <td className="px-3 py-1.5 text-right text-slate-400">${(u.rent / u.sqft).toFixed(2)}</td>
-                      <td className="px-3 py-1.5">
-                        {inputs.units.length > 1 && (
-                          <button onClick={() => removeUnit(u.id)} className="text-slate-500 hover:text-red-400">
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-slate-800 font-medium">
-                  <tr>
-                    <td className="px-3 py-2">Total</td>
-                    <td className="px-3 py-2 text-center">{inputs.units.length}</td>
-                    <td className="px-3 py-2"></td>
-                    <td className="px-3 py-2 text-right">{fmt(calc.totalSqft)}</td>
-                    <td className="px-3 py-2 text-right text-emerald-400">${fmt(calc.monthlyRent)}</td>
-                    <td className="px-3 py-2 text-right text-slate-400">${(calc.monthlyRent / calc.totalSqft).toFixed(2)}</td>
-                    <td></td>
-                  </tr>
-                </tfoot>
-              </table>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">Property Address</label>
+              <input
+                type="text"
+                value={inputs.propertyAddress}
+                onChange={e => set('propertyAddress', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
             </div>
           </div>
+        </section>
 
-          {/* SUMMARY METRICS */}
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              {/* Purchase & Financing */}
-              <div className="bg-[#141821] rounded-lg border border-slate-700 p-4 space-y-3">
-                <div className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Acquisition</div>
-                <Field label="Purchase Price" value={inputs.purchasePrice} onChange={v => setNum('purchasePrice', v)} prefix="$" />
-                <Field label="Capital Improvements" value={inputs.capitalImprovements} onChange={v => setNum('capitalImprovements', v)} prefix="$" />
-                <Field label="Closing Costs" value={inputs.closingCostsPct} onChange={v => setNum('closingCostsPct', v)} suffix="%" />
-                <div className="pt-2 border-t border-slate-700 text-sm">
-                  <div className="flex justify-between"><span className="text-slate-400">Total Acquisition</span><span>{fmtMoney(calc.totalAcquisition)}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Price/SF</span><span>{fmtMoney(calc.pricePerSqft, 2)}</span></div>
-                </div>
-              </div>
-              
-              {/* Financing */}
-              <div className="bg-[#141821] rounded-lg border border-slate-700 p-4 space-y-3">
-                <div className="text-xs text-slate-400 uppercase tracking-wide font-semibold">Financing</div>
-                <Field label="Down Payment" value={inputs.downPaymentPct} onChange={v => setNum('downPaymentPct', v)} suffix="%" />
-                <Field label="Interest Rate" value={inputs.interestRate} onChange={v => setNum('interestRate', v)} suffix="%" />
-                <Field label="Loan Term" value={inputs.loanTerm} onChange={v => setNum('loanTerm', v)} suffix="yrs" />
-                <div className="pt-2 border-t border-slate-700 text-sm">
-                  <div className="flex justify-between"><span className="text-slate-400">Loan Amount</span><span>{fmtMoney(calc.loanAmount)}</span></div>
-                  <div className="flex justify-between"><span className="text-slate-400">Annual Debt Service</span><span>{fmtMoney(calc.annualDebt)}</span></div>
-                </div>
-              </div>
-            </div>
-
-            {/* Key Returns */}
-            <div className="grid grid-cols-4 gap-3">
-              <KPI label="Monthly Rent" value={fmtMoney(calc.monthlyRent)} />
-              <KPI label="Annual Income" value={fmtMoney(calc.gpi)} highlight />
-              <KPI label="Cap Rate" value={fmtPct(calc.capRate)} highlight={calc.capRate > 5} />
-              <KPI label="Cash-on-Cash" value={fmtPct(calc.coc)} highlight={calc.coc > 6} />
-            </div>
+        {/* UNIT SCHEDULE / RENT ROLL */}
+        <section className="bg-gray-50 border border-gray-300 rounded-lg overflow-hidden">
+          <div className="bg-[#1e3a5f] text-white px-4 py-2 font-semibold text-lg flex items-center justify-between">
+            <span>UNIT SCHEDULE (RENT ROLL)</span>
+            <button onClick={addUnit} className="flex items-center gap-1 px-3 py-1 bg-white/20 hover:bg-white/30 rounded text-sm print:hidden">
+              <Plus size={16} /> Add Unit
+            </button>
           </div>
-        </div>
-
-        {/* OPERATING EXPENSES */}
-        <div className="bg-[#141821] rounded-lg border border-slate-700">
-          <div className="bg-amber-600 text-white px-4 py-2 font-semibold text-sm uppercase tracking-wide">Operating Expenses (Annual)</div>
-          <div className="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-            <Field label="Property Taxes" value={inputs.propertyTaxes} onChange={v => setNum('propertyTaxes', v)} prefix="$" />
-            <Field label="Insurance" value={inputs.insurance} onChange={v => setNum('insurance', v)} prefix="$" />
-            <Field label="Repairs & Maint" value={inputs.repairs} onChange={v => setNum('repairs', v)} prefix="$" />
-            <Field label="Utilities" value={inputs.utilities} onChange={v => setNum('utilities', v)} prefix="$" />
-            <Field label="Management" value={inputs.managementPct} onChange={v => setNum('managementPct', v)} suffix="% EGI" />
-            <Field label="Trash" value={inputs.trash} onChange={v => setNum('trash', v)} prefix="$" />
-            <Field label="Landscape" value={inputs.landscape} onChange={v => setNum('landscape', v)} prefix="$" />
-            <Field label="Reserves" value={inputs.reserves} onChange={v => setNum('reserves', v)} prefix="$" />
-            <Field label="Other Income/mo" value={inputs.otherIncome} onChange={v => setNum('otherIncome', v)} prefix="$" />
-            <Field label="Vacancy" value={inputs.vacancyPct} onChange={v => setNum('vacancyPct', v)} suffix="%" />
-          </div>
-        </div>
-
-        {/* ASSUMPTIONS */}
-        <div className="bg-[#141821] rounded-lg border border-slate-700">
-          <div className="bg-blue-600 text-white px-4 py-2 font-semibold text-sm uppercase tracking-wide">Growth & Exit Assumptions</div>
-          <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Field label="Rent Growth" value={inputs.rentGrowth} onChange={v => setNum('rentGrowth', v)} suffix="%" />
-            <Field label="Expense Growth" value={inputs.expenseGrowth} onChange={v => setNum('expenseGrowth', v)} suffix="%" />
-            <Field label="Hold Period" value={inputs.holdYears} onChange={v => setNum('holdYears', v)} suffix="years" />
-            <Field label="Exit Cap Rate" value={inputs.exitCapRate} onChange={v => setNum('exitCapRate', v)} suffix="%" />
-          </div>
-        </div>
-
-        {/* PRO FORMA TABLE */}
-        <div className="bg-[#141821] rounded-lg border border-slate-700 overflow-hidden">
-          <div className="bg-emerald-600 text-white px-4 py-2 font-semibold text-sm uppercase tracking-wide">Pro Forma Projection</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="bg-slate-800">
-                  <th className="px-4 py-2 text-left text-slate-300 font-medium sticky left-0 bg-slate-800 min-w-[180px]"></th>
+                <tr className="bg-gray-200 border-b-2 border-gray-400">
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700">Unit</th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">Bedrooms</th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700">Bathrooms</th>
+                  <th className="px-4 py-3 text-right font-semibold text-gray-700">Square Feet</th>
+                  <th className="px-4 py-3 text-right font-semibold text-gray-700">Monthly Rent</th>
+                  <th className="px-4 py-3 text-right font-semibold text-gray-700">$ per Sq Ft</th>
+                  <th className="px-4 py-3 text-center font-semibold text-gray-700 print:hidden"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {inputs.units.map((unit, idx) => (
+                  <tr key={unit.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                    <td className="px-4 py-2 border-b border-gray-200">
+                      <input
+                        type="text"
+                        value={unit.unitNumber}
+                        onChange={e => updateUnit(unit.id, 'unitNumber', e.target.value)}
+                        className="w-24 px-2 py-1 border border-gray-300 rounded bg-white text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-2 border-b border-gray-200 text-center">
+                      <input
+                        type="number"
+                        value={unit.bedrooms}
+                        onChange={e => updateUnit(unit.id, 'bedrooms', e.target.value)}
+                        className="w-16 px-2 py-1 border border-gray-300 rounded bg-white text-center text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-2 border-b border-gray-200 text-center">
+                      <input
+                        type="number"
+                        value={unit.bathrooms}
+                        onChange={e => updateUnit(unit.id, 'bathrooms', e.target.value)}
+                        className="w-16 px-2 py-1 border border-gray-300 rounded bg-white text-center text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-2 border-b border-gray-200 text-right">
+                      <input
+                        type="number"
+                        value={unit.sqft}
+                        onChange={e => updateUnit(unit.id, 'sqft', e.target.value)}
+                        className="w-20 px-2 py-1 border border-gray-300 rounded bg-white text-right text-sm"
+                      />
+                    </td>
+                    <td className="px-4 py-2 border-b border-gray-200 text-right">
+                      <div className="flex items-center justify-end">
+                        <span className="text-gray-500 mr-1">$</span>
+                        <input
+                          type="number"
+                          value={unit.rent}
+                          onChange={e => updateUnit(unit.id, 'rent', e.target.value)}
+                          className="w-24 px-2 py-1 border border-gray-300 rounded bg-white text-right text-sm"
+                        />
+                      </div>
+                    </td>
+                    <td className="px-4 py-2 border-b border-gray-200 text-right text-gray-600">
+                      ${fmtDec(unit.rent / unit.sqft)}
+                    </td>
+                    <td className="px-4 py-2 border-b border-gray-200 text-center print:hidden">
+                      {inputs.units.length > 1 && (
+                        <button onClick={() => removeUnit(unit.id)} className="text-red-500 hover:text-red-700 p-1">
+                          <Trash2 size={16} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-[#d4e8d4] border-t-2 border-gray-400 font-semibold">
+                  <td className="px-4 py-3">TOTAL ({calc.totalUnits} Units)</td>
+                  <td className="px-4 py-3 text-center">—</td>
+                  <td className="px-4 py-3 text-center">—</td>
+                  <td className="px-4 py-3 text-right">{fmt(calc.totalSqft)}</td>
+                  <td className="px-4 py-3 text-right text-green-700">${fmt(calc.monthlyRent)}</td>
+                  <td className="px-4 py-3 text-right">${fmtDec(calc.monthlyRent / calc.totalSqft)}</td>
+                  <td className="print:hidden"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </section>
+
+        {/* TWO COLUMN LAYOUT: ACQUISITION + KEY METRICS */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* ACQUISITION & FINANCING */}
+          <section className="bg-gray-50 border border-gray-300 rounded-lg overflow-hidden">
+            <div className="bg-[#1e3a5f] text-white px-4 py-2 font-semibold text-lg">
+              ACQUISITION & FINANCING
+            </div>
+            <div className="p-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <NumberInput label="Purchase Price" value={inputs.purchasePrice} onChange={v => setNum('purchasePrice', v)} prefix="$" />
+                <NumberInput label="Closing Costs" value={inputs.closingCosts} onChange={v => setNum('closingCosts', v)} prefix="$" />
+                <NumberInput label="Immediate Repairs" value={inputs.immediateRepairs} onChange={v => setNum('immediateRepairs', v)} prefix="$" />
+                <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                  <div className="text-sm text-gray-600">Total Acquisition Cost</div>
+                  <div className="text-xl font-bold text-blue-800">${fmt(calc.totalAcquisitionCost)}</div>
+                </div>
+              </div>
+              
+              <div className="border-t border-gray-300 pt-4">
+                <div className="font-semibold text-gray-700 mb-3">Financing Terms</div>
+                <div className="grid grid-cols-3 gap-4">
+                  <NumberInput label="Down Payment" value={inputs.downPaymentPct} onChange={v => setNum('downPaymentPct', v)} suffix="%" />
+                  <NumberInput label="Interest Rate" value={inputs.interestRate} onChange={v => setNum('interestRate', v)} suffix="%" />
+                  <NumberInput label="Loan Term" value={inputs.loanTermYears} onChange={v => setNum('loanTermYears', v)} suffix="Years" />
+                </div>
+              </div>
+
+              <div className="bg-gray-100 rounded p-4 grid grid-cols-2 gap-4 text-sm">
+                <div><span className="text-gray-600">Down Payment:</span> <span className="font-semibold">${fmt(calc.downPayment)}</span></div>
+                <div><span className="text-gray-600">Loan Amount:</span> <span className="font-semibold">${fmt(calc.loanAmount)}</span></div>
+                <div><span className="text-gray-600">Monthly Payment:</span> <span className="font-semibold">${fmt(calc.monthlyMortgage)}</span></div>
+                <div><span className="text-gray-600">Annual Debt Service:</span> <span className="font-semibold">${fmt(calc.annualDebtService)}</span></div>
+                <div className="col-span-2 pt-2 border-t border-gray-300">
+                  <span className="text-gray-600">Total Cash Required:</span> <span className="font-bold text-lg">${fmt(calc.totalCashRequired)}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* KEY INVESTMENT METRICS */}
+          <section className="bg-gray-50 border border-gray-300 rounded-lg overflow-hidden">
+            <div className="bg-[#1e3a5f] text-white px-4 py-2 font-semibold text-lg">
+              KEY INVESTMENT METRICS
+            </div>
+            <div className="p-4">
+              <div className="grid grid-cols-2 gap-4">
+                <MetricBox label="Price Per Square Foot" value={`$${fmtDec(calc.pricePerSqft)}`} />
+                <MetricBox label="Price Per Unit" value={`$${fmt(calc.pricePerUnit)}`} />
+                <MetricBox label="Monthly Rental Income" value={`$${fmt(calc.monthlyRent)}`} />
+                <MetricBox label="Annual Rental Income" value={`$${fmt(calc.annualRent)}`} highlight />
+                <MetricBox label="Gross Rent Multiplier (GRM)" value={fmtDec(calc.grossRentMultiplier, 2)} />
+                <MetricBox label="Expense Ratio" value={`${fmtDec(calc.expenseRatio, 1)}%`} />
+                <MetricBox label="Capitalization Rate" value={`${fmtDec(calc.capRate, 2)}%`} highlight={calc.capRate >= 5} />
+                <MetricBox label="Cash-on-Cash Return" value={`${fmtDec(calc.cashOnCash, 2)}%`} highlight={calc.cashOnCash >= 6} negative={calc.cashOnCash < 0} />
+                <MetricBox label="Debt Service Coverage (DSCR)" value={fmtDec(calc.dscr, 2)} highlight={calc.dscr >= 1.25} />
+                <MetricBox label="Year 1 Cash Flow" value={`$${fmt(calc.years[0]?.cashFlowBeforeTax || 0)}`} highlight={(calc.years[0]?.cashFlowBeforeTax || 0) > 0} negative={(calc.years[0]?.cashFlowBeforeTax || 0) < 0} />
+              </div>
+            </div>
+          </section>
+        </div>
+
+        {/* INCOME & EXPENSES SECTION */}
+        <section className="bg-gray-50 border border-gray-300 rounded-lg overflow-hidden">
+          <div className="bg-[#1e3a5f] text-white px-4 py-2 font-semibold text-lg">
+            ANNUAL INCOME & OPERATING EXPENSES
+          </div>
+          <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* INCOME */}
+            <div>
+              <div className="font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-300">INCOME</div>
+              <div className="space-y-2">
+                <div className="flex justify-between py-2 bg-white px-3 rounded">
+                  <span>Scheduled Rental Income</span>
+                  <span className="font-semibold">${fmt(calc.annualRent)}</span>
+                </div>
+                <NumberInput label="Laundry Income (Monthly)" value={inputs.laundryIncome} onChange={v => setNum('laundryIncome', v)} prefix="$" inline />
+                <NumberInput label="Parking Income (Monthly)" value={inputs.parkingIncome} onChange={v => setNum('parkingIncome', v)} prefix="$" inline />
+                <NumberInput label="Storage Income (Monthly)" value={inputs.storageIncome} onChange={v => setNum('storageIncome', v)} prefix="$" inline />
+                <NumberInput label="Other Income (Monthly)" value={inputs.otherIncome} onChange={v => setNum('otherIncome', v)} prefix="$" inline />
+                <div className="flex justify-between py-2 bg-gray-100 px-3 rounded font-semibold">
+                  <span>Total Other Income (Annual)</span>
+                  <span>${fmt(calc.annualOtherIncome)}</span>
+                </div>
+                <div className="flex justify-between py-3 bg-green-100 px-3 rounded font-bold text-green-800 text-lg border border-green-300">
+                  <span>GROSS POTENTIAL INCOME</span>
+                  <span>${fmt(calc.grossPotentialIncome)}</span>
+                </div>
+                <NumberInput label="Vacancy & Credit Loss" value={inputs.vacancyPct} onChange={v => setNum('vacancyPct', v)} suffix="%" inline />
+                <div className="flex justify-between py-3 bg-green-200 px-3 rounded font-bold text-green-900 text-lg border border-green-400">
+                  <span>EFFECTIVE GROSS INCOME</span>
+                  <span>${fmt(calc.years[0]?.effectiveGrossIncome || 0)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* EXPENSES */}
+            <div>
+              <div className="font-semibold text-gray-700 mb-3 pb-2 border-b border-gray-300">OPERATING EXPENSES (Annual)</div>
+              <div className="space-y-2">
+                <NumberInput label="Real Estate Taxes" value={inputs.realEstateTaxes} onChange={v => setNum('realEstateTaxes', v)} prefix="$" inline />
+                <NumberInput label="Property Insurance" value={inputs.insurance} onChange={v => setNum('insurance', v)} prefix="$" inline />
+                <NumberInput label="Water" value={inputs.water} onChange={v => setNum('water', v)} prefix="$" inline />
+                <NumberInput label="Sewer" value={inputs.sewer} onChange={v => setNum('sewer', v)} prefix="$" inline />
+                <NumberInput label="Gas" value={inputs.gas} onChange={v => setNum('gas', v)} prefix="$" inline />
+                <NumberInput label="Electric" value={inputs.electric} onChange={v => setNum('electric', v)} prefix="$" inline />
+                <NumberInput label="Trash Removal" value={inputs.trash} onChange={v => setNum('trash', v)} prefix="$" inline />
+                <NumberInput label="Landscaping / Grounds" value={inputs.landscaping} onChange={v => setNum('landscaping', v)} prefix="$" inline />
+                <NumberInput label="Snow Removal" value={inputs.snowRemoval} onChange={v => setNum('snowRemoval', v)} prefix="$" inline />
+                <NumberInput label="Repairs & Maintenance" value={inputs.repairsMaintenance} onChange={v => setNum('repairsMaintenance', v)} prefix="$" inline />
+                <NumberInput label="Pest Control" value={inputs.pestControl} onChange={v => setNum('pestControl', v)} prefix="$" inline />
+                <NumberInput label="Property Management" value={inputs.managementPct} onChange={v => setNum('managementPct', v)} suffix="% of EGI" inline />
+                <NumberInput label="Legal & Accounting" value={inputs.legalAccounting} onChange={v => setNum('legalAccounting', v)} prefix="$" inline />
+                <NumberInput label="Advertising & Marketing" value={inputs.advertising} onChange={v => setNum('advertising', v)} prefix="$" inline />
+                <NumberInput label="Miscellaneous" value={inputs.miscellaneous} onChange={v => setNum('miscellaneous', v)} prefix="$" inline />
+                <NumberInput label="Replacement Reserves" value={inputs.replacementReserves} onChange={v => setNum('replacementReserves', v)} prefix="$" inline />
+                <div className="flex justify-between py-3 bg-yellow-100 px-3 rounded font-bold text-yellow-800 text-lg border border-yellow-300">
+                  <span>TOTAL OPERATING EXPENSES</span>
+                  <span>${fmt(calc.years[0]?.totalOperatingExpenses || 0)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* GROWTH ASSUMPTIONS */}
+        <section className="bg-gray-50 border border-gray-300 rounded-lg overflow-hidden">
+          <div className="bg-[#1e3a5f] text-white px-4 py-2 font-semibold text-lg">
+            PROJECTION ASSUMPTIONS
+          </div>
+          <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+            <NumberInput label="Annual Rent Increase" value={inputs.annualRentIncrease} onChange={v => setNum('annualRentIncrease', v)} suffix="%" />
+            <NumberInput label="Annual Expense Increase" value={inputs.annualExpenseIncrease} onChange={v => setNum('annualExpenseIncrease', v)} suffix="%" />
+            <NumberInput label="Projection Period" value={inputs.projectionYears} onChange={v => setNum('projectionYears', v)} suffix="Years" />
+            <NumberInput label="Exit Cap Rate" value={inputs.exitCapRate} onChange={v => setNum('exitCapRate', v)} suffix="%" />
+          </div>
+        </section>
+
+        {/* PRO FORMA PROJECTION TABLE */}
+        <section className="bg-gray-50 border border-gray-300 rounded-lg overflow-hidden">
+          <div className="bg-[#1e3a5f] text-white px-4 py-2 font-semibold text-lg">
+            {inputs.projectionYears + 1}-YEAR PRO FORMA PROJECTION
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700 border-b-2 border-gray-400 min-w-[200px] sticky left-0 bg-gray-200">Line Item</th>
                   {calc.years.map(y => (
-                    <th key={y.year} className="px-4 py-2 text-right text-slate-300 font-medium min-w-[100px]">{y.year}</th>
+                    <th key={y.year} className="px-4 py-3 text-right font-semibold text-gray-700 border-b-2 border-gray-400 min-w-[110px]">{y.year}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/50">
-                <Row label="Annual Rent" values={calc.years.map(y => y.rent)} />
-                <Row label="Vacancy Factor" values={calc.years.map(y => -y.vacancy)} negative />
-                <Row label="Effective Gross Revenue" values={calc.years.map(y => y.egi)} bold className="bg-emerald-900/20" />
+              <tbody>
+                {/* INCOME SECTION */}
+                <SectionHeader label="INCOME" colSpan={calc.years.length + 1} />
+                <DataRow label="Scheduled Rental Income" values={calc.years.map(y => y.scheduledRent)} />
+                <DataRow label="Other Income" values={calc.years.map(y => y.otherIncome)} />
+                <DataRow label="Gross Potential Income" values={calc.years.map(y => y.grossPotentialIncome)} bold className="bg-gray-100" />
+                <DataRow label="Less: Vacancy & Credit Loss" values={calc.years.map(y => -y.vacancy)} negative />
+                <DataRow label="EFFECTIVE GROSS INCOME" values={calc.years.map(y => y.effectiveGrossIncome)} bold className="bg-green-100 text-green-800" />
+
+                {/* EXPENSES SECTION */}
+                <SectionHeader label="OPERATING EXPENSES" colSpan={calc.years.length + 1} />
+                <DataRow label="Real Estate Taxes" values={calc.years.map(y => y.realEstateTaxes)} />
+                <DataRow label="Insurance" values={calc.years.map(y => y.insurance)} />
+                <DataRow label="Utilities (Water, Sewer, Gas, Electric)" values={calc.years.map(y => y.utilities)} />
+                <DataRow label="Trash Removal" values={calc.years.map(y => y.trash)} />
+                <DataRow label="Landscaping / Grounds" values={calc.years.map(y => y.landscaping)} />
+                <DataRow label="Snow Removal" values={calc.years.map(y => y.snowRemoval)} />
+                <DataRow label="Repairs & Maintenance" values={calc.years.map(y => y.repairsMaintenance)} />
+                <DataRow label="Pest Control" values={calc.years.map(y => y.pestControl)} />
+                <DataRow label="Property Management" values={calc.years.map(y => y.management)} />
+                <DataRow label="Legal & Accounting" values={calc.years.map(y => y.legalAccounting)} />
+                <DataRow label="Advertising & Marketing" values={calc.years.map(y => y.advertising)} />
+                <DataRow label="Miscellaneous" values={calc.years.map(y => y.miscellaneous)} />
+                <DataRow label="Replacement Reserves" values={calc.years.map(y => y.replacementReserves)} />
+                <DataRow label="TOTAL OPERATING EXPENSES" values={calc.years.map(y => y.totalOperatingExpenses)} bold className="bg-yellow-100 text-yellow-800" />
+
+                {/* RESULTS SECTION */}
+                <SectionHeader label="NET INCOME & CASH FLOW" colSpan={calc.years.length + 1} />
+                <DataRow label="NET OPERATING INCOME (NOI)" values={calc.years.map(y => y.netOperatingIncome)} bold className="bg-green-200 text-green-900 text-base" />
+                <DataRow label="Less: Annual Debt Service" values={calc.years.map(y => -y.debtService)} negative />
+                <DataRow label="CASH FLOW BEFORE TAX" values={calc.years.map(y => y.cashFlowBeforeTax)} bold className="bg-blue-100 text-blue-900 text-base" />
                 
-                <tr className="h-2"></tr>
-                <Row label="Real Estate Taxes" values={calc.years.map(y => -y.taxes)} negative />
-                <Row label="Insurance" values={calc.years.map(y => -y.insurance)} negative />
-                <Row label="Repairs & Maintenance" values={calc.years.map(y => -y.repairs)} negative />
-                <Row label="Utilities" values={calc.years.map(y => -y.utilities)} negative />
-                <Row label="Management" values={calc.years.map(y => -y.management)} negative />
-                <Row label="Trash" values={calc.years.map(y => -y.trash)} negative />
-                <Row label="Landscape" values={calc.years.map(y => -y.landscape)} negative />
-                <Row label="Reserves" values={calc.years.map(y => -y.reserves)} negative />
-                <Row label="Total Operating Expenses" values={calc.years.map(y => -y.opex)} bold negative className="bg-yellow-900/20" />
-                
-                <tr className="h-2"></tr>
-                <Row label="NOI" values={calc.years.map(y => y.noi)} bold className="bg-emerald-900/30 text-emerald-400" />
-                
-                <tr className="h-2"></tr>
-                <Row label="Lease Commissions" values={calc.years.map(y => -y.leasing)} negative />
-                <Row label="Tenant Improvements" values={calc.years.map(y => -y.ti)} negative />
-                <Row label="Capital Reserves" values={calc.years.map(y => -y.capReserves)} negative />
-                <Row label="Total Leasing & Capital" values={calc.years.map(y => -y.totalCapex)} bold negative />
-                
-                <tr className="h-2"></tr>
-                <Row label="Cash Flow Before Debt" values={calc.years.map(y => y.cfBeforeDebt)} bold />
-                <Row label="Debt Service" values={calc.years.map(y => -y.debt)} negative />
-                <Row label="Cash Flow After Debt" values={calc.years.map(y => y.cfAfterDebt)} bold className="bg-emerald-900/40 text-emerald-300" />
-                
-                <tr className="bg-slate-800">
-                  <td className="px-4 py-2 font-medium sticky left-0 bg-slate-800">Cash-on-Cash Return</td>
-                  {calc.years.map(y => (
-                    <td key={y.year} className={`px-4 py-2 text-right font-mono font-bold ${y.coc >= 8 ? 'text-emerald-400' : y.coc >= 0 ? 'text-white' : 'text-red-400'}`}>
-                      {fmtPct(y.coc)}
-                    </td>
-                  ))}
+                {/* ROI ROW */}
+                <tr className="bg-gray-200 border-t-2 border-gray-400">
+                  <td className="px-4 py-3 font-bold sticky left-0 bg-gray-200">CASH-ON-CASH RETURN</td>
+                  {calc.years.map(y => {
+                    const coc = calc.totalCashRequired > 0 ? (y.cashFlowBeforeTax / calc.totalCashRequired) * 100 : 0
+                    return (
+                      <td key={y.year} className={`px-4 py-3 text-right font-bold ${coc >= 8 ? 'text-green-700' : coc >= 0 ? 'text-gray-900' : 'text-red-600'}`}>
+                        {fmtDec(coc, 2)}%
+                      </td>
+                    )
+                  })}
                 </tr>
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
 
         {/* FOOTER */}
-        <div className="text-center text-slate-500 text-sm py-4">
-          Free Real Estate Investment Analysis • Data auto-saved in your browser
-        </div>
-      </div>
+        <footer className="text-center text-gray-500 text-sm py-4 print:hidden">
+          Free Investment Pro Forma Tool • All data saved locally in your browser • 
+          <span className="text-gray-400 ml-2">Last saved: {new Date().toLocaleString()}</span>
+        </footer>
+      </main>
     </div>
   )
 }
 
 // ============================================================================
-// COMPONENTS
+// SUB-COMPONENTS
 // ============================================================================
 
-function Field({ label, value, onChange, prefix, suffix }: {
+function NumberInput({ 
+  label, 
+  value, 
+  onChange, 
+  prefix, 
+  suffix,
+  inline = false 
+}: { 
   label: string
   value: number
   onChange: (v: string) => void
   prefix?: string
   suffix?: string
+  inline?: boolean
 }) {
+  if (inline) {
+    return (
+      <div className="flex items-center justify-between py-2 bg-white px-3 rounded border border-gray-200">
+        <label className="text-gray-700">{label}</label>
+        <div className="flex items-center">
+          {prefix && <span className="text-gray-500 mr-1 text-sm">{prefix}</span>}
+          <input
+            type="number"
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            className="w-24 px-2 py-1 border border-gray-300 rounded text-right text-sm bg-gray-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+          />
+          {suffix && <span className="text-gray-500 ml-1 text-sm">{suffix}</span>}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div>
-      <label className="text-xs text-slate-400 block mb-1">{label}</label>
-      <div className="flex items-center bg-slate-800 rounded border border-slate-600 focus-within:border-emerald-400">
-        {prefix && <span className="pl-2 text-slate-500 text-sm">{prefix}</span>}
+      <label className="block text-sm font-medium text-gray-600 mb-1">{label}</label>
+      <div className="flex items-center border border-gray-300 rounded bg-white focus-within:ring-2 focus-within:ring-blue-500">
+        {prefix && <span className="pl-3 text-gray-500">{prefix}</span>}
         <input
           type="number"
           value={value}
           onChange={e => onChange(e.target.value)}
-          className="flex-1 bg-transparent px-2 py-1.5 text-sm focus:outline-none w-full"
+          className="flex-1 px-3 py-2 text-right focus:outline-none bg-transparent"
         />
-        {suffix && <span className="pr-2 text-slate-500 text-xs">{suffix}</span>}
+        {suffix && <span className="pr-3 text-gray-500 text-sm">{suffix}</span>}
       </div>
     </div>
   )
 }
 
-function KPI({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function MetricBox({ label, value, highlight, negative }: { label: string; value: string; highlight?: boolean; negative?: boolean }) {
   return (
-    <div className={`bg-slate-800 rounded-lg p-3 text-center ${highlight ? 'ring-1 ring-emerald-500/50' : ''}`}>
-      <div className="text-xs text-slate-400 mb-1">{label}</div>
-      <div className={`text-lg font-bold font-mono ${highlight ? 'text-emerald-400' : ''}`}>{value}</div>
+    <div className={`p-4 rounded border ${
+      negative ? 'bg-red-50 border-red-300' :
+      highlight ? 'bg-green-50 border-green-300' : 
+      'bg-white border-gray-300'
+    }`}>
+      <div className="text-sm text-gray-600 mb-1">{label}</div>
+      <div className={`text-xl font-bold ${
+        negative ? 'text-red-700' :
+        highlight ? 'text-green-700' : 
+        'text-gray-900'
+      }`}>{value}</div>
     </div>
   )
 }
 
-function Row({ label, values, bold, negative, className = '' }: {
+function SectionHeader({ label, colSpan }: { label: string; colSpan: number }) {
+  return (
+    <tr className="bg-[#1e3a5f]">
+      <td colSpan={colSpan} className="px-4 py-2 text-white font-semibold text-sm sticky left-0 bg-[#1e3a5f]">
+        {label}
+      </td>
+    </tr>
+  )
+}
+
+function DataRow({ label, values, bold, negative, className = '' }: { 
   label: string
   values: number[]
   bold?: boolean
@@ -516,13 +834,14 @@ function Row({ label, values, bold, negative, className = '' }: {
   className?: string
 }) {
   return (
-    <tr className={className}>
-      <td className={`px-4 py-1.5 sticky left-0 bg-[#141821] ${bold ? 'font-semibold' : 'text-slate-400'} ${className}`}>{label}</td>
+    <tr className={`border-b border-gray-200 ${className}`}>
+      <td className={`px-4 py-2 sticky left-0 ${className || 'bg-white'} ${bold ? 'font-semibold' : ''}`}>{label}</td>
       {values.map((v, i) => (
-        <td key={i} className={`px-4 py-1.5 text-right font-mono ${
-          negative && v < 0 ? 'text-red-400/70' : bold ? 'font-semibold' : ''
+        <td key={i} className={`px-4 py-2 text-right font-mono ${
+          negative && v < 0 ? 'text-red-600' : 
+          bold ? 'font-semibold' : ''
         }`}>
-          {fmtMoney(v)}
+          ${fmt(Math.abs(v))}
         </td>
       ))}
     </tr>
