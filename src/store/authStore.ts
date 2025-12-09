@@ -1,13 +1,20 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { supabase } from '../lib/supabase'
 import type { User } from '../types'
+
+// Check if Supabase is properly configured
+const isSupabaseConfigured = () => {
+  const url = import.meta.env.VITE_SUPABASE_URL
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+  return url && key && !url.includes('placeholder') && !key.includes('placeholder')
+}
 
 interface AuthState {
   user: User | null
   isLoading: boolean
   isAuthenticated: boolean
   error: string | null
+  isDemoMode: boolean
   
   // Actions
   signUp: (email: string, password: string, fullName?: string) => Promise<void>
@@ -21,20 +28,41 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       user: null,
-      isLoading: true,
+      isLoading: false,
       isAuthenticated: false,
       error: null,
+      isDemoMode: !isSupabaseConfigured(),
 
       signUp: async (email: string, password: string, fullName?: string) => {
         set({ isLoading: true, error: null })
+        
+        // Demo mode - create user locally
+        if (!isSupabaseConfigured()) {
+          // Simulate network delay
+          await new Promise(resolve => setTimeout(resolve, 500))
+          
+          const user: User = {
+            id: `demo-${Date.now()}`,
+            email,
+            full_name: fullName,
+            created_at: new Date().toISOString(),
+          }
+          
+          // Store in localStorage
+          localStorage.setItem('demo_user', JSON.stringify(user))
+          
+          set({ user, isAuthenticated: true, isLoading: false, isDemoMode: true })
+          return
+        }
+
+        // Real Supabase auth
         try {
+          const { supabase } = await import('../lib/supabase')
           const { data, error } = await supabase.auth.signUp({
             email,
             password,
             options: {
-              data: {
-                full_name: fullName,
-              },
+              data: { full_name: fullName },
             },
           })
 
@@ -60,7 +88,39 @@ export const useAuthStore = create<AuthState>()(
 
       signIn: async (email: string, password: string) => {
         set({ isLoading: true, error: null })
+        
+        // Demo mode - authenticate locally
+        if (!isSupabaseConfigured()) {
+          // Simulate network delay
+          await new Promise(resolve => setTimeout(resolve, 500))
+          
+          // Check if user exists or create new one
+          const existingUser = localStorage.getItem('demo_user')
+          let user: User
+          
+          if (existingUser) {
+            user = JSON.parse(existingUser)
+            // Update email if different
+            if (user.email !== email) {
+              user.email = email
+            }
+          } else {
+            user = {
+              id: `demo-${Date.now()}`,
+              email,
+              full_name: email.split('@')[0],
+              created_at: new Date().toISOString(),
+            }
+          }
+          
+          localStorage.setItem('demo_user', JSON.stringify(user))
+          set({ user, isAuthenticated: true, isLoading: false, isDemoMode: true })
+          return
+        }
+
+        // Real Supabase auth
         try {
+          const { supabase } = await import('../lib/supabase')
           const { data, error } = await supabase.auth.signInWithPassword({
             email,
             password,
@@ -88,7 +148,15 @@ export const useAuthStore = create<AuthState>()(
 
       signOut: async () => {
         set({ isLoading: true })
+        
+        if (!isSupabaseConfigured()) {
+          localStorage.removeItem('demo_user')
+          set({ user: null, isAuthenticated: false, isLoading: false })
+          return
+        }
+
         try {
+          const { supabase } = await import('../lib/supabase')
           await supabase.auth.signOut()
           set({ user: null, isAuthenticated: false, isLoading: false })
         } catch (error) {
@@ -101,7 +169,26 @@ export const useAuthStore = create<AuthState>()(
 
       checkAuth: async () => {
         set({ isLoading: true })
+        
+        // Demo mode - check localStorage
+        if (!isSupabaseConfigured()) {
+          const storedUser = localStorage.getItem('demo_user')
+          if (storedUser) {
+            try {
+              const user = JSON.parse(storedUser)
+              set({ user, isAuthenticated: true, isLoading: false, isDemoMode: true })
+              return
+            } catch {
+              // Invalid stored data
+            }
+          }
+          set({ user: null, isAuthenticated: false, isLoading: false, isDemoMode: true })
+          return
+        }
+
+        // Real Supabase auth
         try {
+          const { supabase } = await import('../lib/supabase')
           const { data: { session } } = await supabase.auth.getSession()
           
           if (session?.user) {
@@ -131,31 +218,9 @@ export const useAuthStore = create<AuthState>()(
       name: 'investor-pro-auth',
       partialize: (state) => ({ 
         user: state.user,
-        isAuthenticated: state.isAuthenticated 
+        isAuthenticated: state.isAuthenticated,
+        isDemoMode: state.isDemoMode,
       }),
     }
   )
 )
-
-// Listen for auth changes
-supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_IN' && session?.user) {
-    useAuthStore.setState({
-      user: {
-        id: session.user.id,
-        email: session.user.email || '',
-        full_name: session.user.user_metadata?.full_name,
-        created_at: session.user.created_at,
-      },
-      isAuthenticated: true,
-      isLoading: false,
-    })
-  } else if (event === 'SIGNED_OUT') {
-    useAuthStore.setState({
-      user: null,
-      isAuthenticated: false,
-      isLoading: false,
-    })
-  }
-})
-

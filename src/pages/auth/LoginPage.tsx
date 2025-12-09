@@ -37,7 +37,7 @@ export const LoginPage: React.FC = () => {
             <TrendingUp className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-2">Welcome Back</h1>
-          <p className="text-slate-400">Sign in to access your investment analyses</p>
+          <p className="text-slate-400">Professional real estate investment analysis</p>
         </div>
 
         <Card variant="glass" padding="lg">
@@ -100,11 +100,11 @@ export const LoginPage: React.FC = () => {
         </Card>
 
         {/* Demo Mode Notice */}
-        <div className="mt-6 p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
-          <p className="text-sm text-blue-300 text-center">
-            <strong>Demo Mode:</strong> Use any email/password to explore the app.
+        <div className="mt-6 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
+          <p className="text-sm text-emerald-300 text-center">
+            <strong>✨ Free to Use:</strong> Enter any email and password to get started.
             <br />
-            <span className="text-blue-400/80">Data is stored locally until Supabase is configured.</span>
+            <span className="text-emerald-400/80">Your projects are saved locally in your browser.</span>
           </p>
         </div>
       </div>

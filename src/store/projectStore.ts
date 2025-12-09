@@ -1,6 +1,6 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import { v4 as uuidv4 } from 'uuid'
-import { supabase } from '../lib/supabase'
 import type { 
   Project, 
   PropertyType, 
@@ -14,6 +14,13 @@ import type {
   ExitAssumptions,
   Scenario
 } from '../types'
+
+// Check if Supabase is properly configured
+const isSupabaseConfigured = () => {
+  const url = import.meta.env.VITE_SUPABASE_URL
+  const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+  return url && key && !url.includes('placeholder') && !key.includes('placeholder')
+}
 
 interface ProjectState {
   projects: Project[]
@@ -266,425 +273,532 @@ const defaultProject = (): Omit<Project, 'id' | 'user_id' | 'created_at' | 'upda
   scenarios: [],
 })
 
-export const useProjectStore = create<ProjectState>((set, get) => ({
-  projects: [],
-  currentProject: null,
-  isLoading: false,
-  isSaving: false,
-  error: null,
-  lastSaved: null,
+export const useProjectStore = create<ProjectState>()(
+  persist(
+    (set, get) => ({
+      projects: [],
+      currentProject: null,
+      isLoading: false,
+      isSaving: false,
+      error: null,
+      lastSaved: null,
 
-  fetchProjects: async () => {
-    set({ isLoading: true, error: null })
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
-        set({ projects: [], isLoading: false })
-        return
-      }
+      fetchProjects: async () => {
+        set({ isLoading: true, error: null })
+        
+        // Demo mode - use localStorage
+        if (!isSupabaseConfigured()) {
+          const storedProjects = localStorage.getItem('demo_projects')
+          if (storedProjects) {
+            try {
+              const projects = JSON.parse(storedProjects)
+              set({ projects, isLoading: false })
+              return
+            } catch {
+              // Invalid data
+            }
+          }
+          set({ projects: [], isLoading: false })
+          return
+        }
 
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('updated_at', { ascending: false })
+        // Supabase mode
+        try {
+          const { supabase } = await import('../lib/supabase')
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) {
+            set({ projects: [], isLoading: false })
+            return
+          }
 
-      if (error) throw error
+          const { data, error } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('updated_at', { ascending: false })
 
-      // Load full project data for each project
-      const projects: Project[] = await Promise.all(
-        (data || []).map(async (p) => {
-          const { data: projectData } = await supabase
+          if (error) throw error
+
+          const projects: Project[] = await Promise.all(
+            (data || []).map(async (p) => {
+              const { data: projectData } = await supabase
+                .from('project_data')
+                .select('*')
+                .eq('project_id', p.id)
+
+              const sections: Record<string, unknown> = {}
+              projectData?.forEach(pd => {
+                sections[pd.section] = pd.data
+              })
+
+              return {
+                ...p,
+                ...sections,
+                completeness: 0,
+              } as Project
+            })
+          )
+
+          set({ projects, isLoading: false })
+        } catch (error) {
+          set({ 
+            error: error instanceof Error ? error.message : 'Failed to fetch projects',
+            isLoading: false 
+          })
+        }
+      },
+
+      createProject: async (name: string, propertyType?: PropertyType) => {
+        set({ isLoading: true, error: null })
+        
+        const id = uuidv4()
+        const now = new Date().toISOString()
+        const projectBase = defaultProject()
+        
+        // Get user from localStorage or Supabase
+        let userId = 'demo-user'
+        const storedUser = localStorage.getItem('demo_user')
+        if (storedUser) {
+          try {
+            userId = JSON.parse(storedUser).id
+          } catch {
+            // Use default
+          }
+        }
+        
+        const project: Project = {
+          id,
+          user_id: userId,
+          created_at: now,
+          updated_at: now,
+          ...projectBase,
+          name,
+          property_type: propertyType || null,
+        }
+
+        // Demo mode - save to localStorage
+        if (!isSupabaseConfigured()) {
+          const currentProjects = get().projects
+          const newProjects = [project, ...currentProjects]
+          localStorage.setItem('demo_projects', JSON.stringify(newProjects))
+          
+          set({ 
+            projects: newProjects,
+            currentProject: project,
+            isLoading: false,
+            lastSaved: new Date(),
+          })
+          
+          return project
+        }
+
+        // Supabase mode
+        try {
+          const { supabase } = await import('../lib/supabase')
+          const { data: { user } } = await supabase.auth.getUser()
+          if (!user) throw new Error('Not authenticated')
+          
+          project.user_id = user.id
+
+          const { error: projectError } = await supabase
+            .from('projects')
+            .insert({
+              id: project.id,
+              user_id: project.user_id,
+              name: project.name,
+              property_type: project.property_type,
+              status: project.status,
+              is_template: project.is_template,
+              created_at: project.created_at,
+              updated_at: project.updated_at,
+            })
+
+          if (projectError) throw projectError
+
+          const sections = ['property', 'analysis', 'acquisition', 'financing', 'income', 'expenses', 'capital', 'growth', 'exit', 'scenarios']
+          for (const section of sections) {
+            const sectionData = project[section as keyof Project]
+            if (sectionData !== undefined) {
+              await supabase.from('project_data').insert({
+                project_id: project.id,
+                section,
+                data: sectionData as unknown as Record<string, unknown>,
+              })
+            }
+          }
+
+          set(state => ({ 
+            projects: [project, ...state.projects],
+            currentProject: project,
+            isLoading: false,
+            lastSaved: new Date(),
+          }))
+
+          return project
+        } catch (error) {
+          set({ 
+            error: error instanceof Error ? error.message : 'Failed to create project',
+            isLoading: false 
+          })
+          throw error
+        }
+      },
+
+      loadProject: async (id: string) => {
+        set({ isLoading: true, error: null })
+        
+        // Demo mode - load from localStorage
+        if (!isSupabaseConfigured()) {
+          const storedProjects = localStorage.getItem('demo_projects')
+          if (storedProjects) {
+            try {
+              const projects = JSON.parse(storedProjects)
+              const project = projects.find((p: Project) => p.id === id)
+              if (project) {
+                project.completeness = get().calculateCompleteness()
+                set({ currentProject: project, isLoading: false })
+                return
+              }
+            } catch {
+              // Invalid data
+            }
+          }
+          set({ error: 'Project not found', isLoading: false })
+          return
+        }
+
+        // Supabase mode
+        try {
+          const { supabase } = await import('../lib/supabase')
+          const { data: projectData, error: projectError } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('id', id)
+            .single()
+
+          if (projectError) throw projectError
+
+          const { data: sectionsData, error: sectionsError } = await supabase
             .from('project_data')
             .select('*')
-            .eq('project_id', p.id)
+            .eq('project_id', id)
+
+          if (sectionsError) throw sectionsError
 
           const sections: Record<string, unknown> = {}
-          projectData?.forEach(pd => {
-            sections[pd.section] = pd.data
+          sectionsData?.forEach(sd => {
+            sections[sd.section] = sd.data
           })
 
-          return {
-            ...p,
+          const project: Project = {
+            ...projectData,
             ...sections,
             completeness: 0,
           } as Project
-        })
-      )
 
-      set({ projects, isLoading: false })
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to fetch projects',
-        isLoading: false 
-      })
-    }
-  },
+          const completeness = get().calculateCompleteness()
+          project.completeness = completeness
 
-  createProject: async (name: string, propertyType?: PropertyType) => {
-    set({ isLoading: true, error: null })
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('Not authenticated')
-
-      const id = uuidv4()
-      const now = new Date().toISOString()
-      const projectBase = defaultProject()
-      
-      const project: Project = {
-        id,
-        user_id: user.id,
-        created_at: now,
-        updated_at: now,
-        ...projectBase,
-        name,
-        property_type: propertyType || null,
-      }
-
-      // Save to Supabase
-      const { error: projectError } = await supabase
-        .from('projects')
-        .insert({
-          id: project.id,
-          user_id: project.user_id,
-          name: project.name,
-          property_type: project.property_type,
-          status: project.status,
-          is_template: project.is_template,
-          created_at: project.created_at,
-          updated_at: project.updated_at,
-        })
-
-      if (projectError) throw projectError
-
-      // Save sections
-      const sections = ['property', 'analysis', 'acquisition', 'financing', 'income', 'expenses', 'capital', 'growth', 'exit', 'scenarios']
-      for (const section of sections) {
-        const sectionData = project[section as keyof Project]
-        if (sectionData !== undefined) {
-          await supabase.from('project_data').insert({
-            project_id: project.id,
-            section,
-            data: sectionData as unknown as Record<string, unknown>,
+          set({ currentProject: project, isLoading: false })
+        } catch (error) {
+          set({ 
+            error: error instanceof Error ? error.message : 'Failed to load project',
+            isLoading: false 
           })
         }
-      }
+      },
 
-      set(state => ({ 
-        projects: [project, ...state.projects],
-        currentProject: project,
-        isLoading: false,
-        lastSaved: new Date(),
-      }))
+      updateProject: (updates: Partial<Project>) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { ...state.currentProject, ...updates, updated_at: new Date().toISOString() }
+            : null
+        }))
+      },
 
-      return project
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to create project',
-        isLoading: false 
-      })
-      throw error
-    }
-  },
+      saveProject: async () => {
+        const { currentProject, projects } = get()
+        if (!currentProject) return
 
-  loadProject: async (id: string) => {
-    set({ isLoading: true, error: null })
-    try {
-      const { data: projectData, error: projectError } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('id', id)
-        .single()
+        set({ isSaving: true, error: null })
+        const now = new Date().toISOString()
+        const updatedProject = { ...currentProject, updated_at: now }
 
-      if (projectError) throw projectError
+        // Demo mode - save to localStorage
+        if (!isSupabaseConfigured()) {
+          const updatedProjects = projects.map(p => 
+            p.id === currentProject.id ? updatedProject : p
+          )
+          localStorage.setItem('demo_projects', JSON.stringify(updatedProjects))
+          
+          set({
+            isSaving: false,
+            lastSaved: new Date(),
+            currentProject: updatedProject,
+            projects: updatedProjects,
+          })
+          return
+        }
 
-      const { data: sectionsData, error: sectionsError } = await supabase
-        .from('project_data')
-        .select('*')
-        .eq('project_id', id)
-
-      if (sectionsError) throw sectionsError
-
-      const sections: Record<string, unknown> = {}
-      sectionsData?.forEach(sd => {
-        sections[sd.section] = sd.data
-      })
-
-      const project: Project = {
-        ...projectData,
-        ...sections,
-        completeness: 0,
-      } as Project
-
-      // Calculate completeness
-      const completeness = get().calculateCompleteness()
-      project.completeness = completeness
-
-      set({ currentProject: project, isLoading: false })
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to load project',
-        isLoading: false 
-      })
-    }
-  },
-
-  updateProject: (updates: Partial<Project>) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { ...state.currentProject, ...updates, updated_at: new Date().toISOString() }
-        : null
-    }))
-  },
-
-  saveProject: async () => {
-    const { currentProject } = get()
-    if (!currentProject) return
-
-    set({ isSaving: true, error: null })
-    try {
-      const now = new Date().toISOString()
-
-      // Update main project record
-      const { error: projectError } = await supabase
-        .from('projects')
-        .update({
-          name: currentProject.name,
-          property_type: currentProject.property_type,
-          status: currentProject.status,
-          updated_at: now,
-        })
-        .eq('id', currentProject.id)
-
-      if (projectError) throw projectError
-
-      // Update sections
-      const sections = ['property', 'analysis', 'acquisition', 'financing', 'income', 'expenses', 'capital', 'growth', 'exit', 'scenarios']
-      for (const section of sections) {
-        const sectData = currentProject[section as keyof Project]
-        if (sectData !== undefined) {
-          await supabase
-            .from('project_data')
-            .upsert({
-              project_id: currentProject.id,
-              section,
-              data: sectData as unknown as Record<string, unknown>,
+        // Supabase mode
+        try {
+          const { supabase } = await import('../lib/supabase')
+          
+          const { error: projectError } = await supabase
+            .from('projects')
+            .update({
+              name: currentProject.name,
+              property_type: currentProject.property_type,
+              status: currentProject.status,
               updated_at: now,
             })
+            .eq('id', currentProject.id)
+
+          if (projectError) throw projectError
+
+          const sections = ['property', 'analysis', 'acquisition', 'financing', 'income', 'expenses', 'capital', 'growth', 'exit', 'scenarios']
+          for (const section of sections) {
+            const sectData = currentProject[section as keyof Project]
+            if (sectData !== undefined) {
+              await supabase
+                .from('project_data')
+                .upsert({
+                  project_id: currentProject.id,
+                  section,
+                  data: sectData as unknown as Record<string, unknown>,
+                  updated_at: now,
+                })
+            }
+          }
+
+          set(state => ({
+            isSaving: false,
+            lastSaved: new Date(),
+            currentProject: updatedProject,
+            projects: state.projects.map(p => 
+              p.id === currentProject.id ? updatedProject : p
+            ),
+          }))
+        } catch (error) {
+          set({ 
+            error: error instanceof Error ? error.message : 'Failed to save project',
+            isSaving: false 
+          })
         }
-      }
+      },
 
-      set(state => ({
-        isSaving: false,
-        lastSaved: new Date(),
-        currentProject: state.currentProject 
-          ? { ...state.currentProject, updated_at: now }
-          : null,
-        projects: state.projects.map(p => 
-          p.id === currentProject.id 
-            ? { ...p, ...currentProject, updated_at: now }
-            : p
-        ),
-      }))
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to save project',
-        isSaving: false 
-      })
+      deleteProject: async (id: string) => {
+        set({ isLoading: true, error: null })
+        
+        // Demo mode - delete from localStorage
+        if (!isSupabaseConfigured()) {
+          const { projects, currentProject } = get()
+          const updatedProjects = projects.filter(p => p.id !== id)
+          localStorage.setItem('demo_projects', JSON.stringify(updatedProjects))
+          
+          set({
+            projects: updatedProjects,
+            currentProject: currentProject?.id === id ? null : currentProject,
+            isLoading: false,
+          })
+          return
+        }
+
+        // Supabase mode
+        try {
+          const { supabase } = await import('../lib/supabase')
+          await supabase.from('project_data').delete().eq('project_id', id)
+          const { error } = await supabase.from('projects').delete().eq('id', id)
+          if (error) throw error
+
+          set(state => ({
+            projects: state.projects.filter(p => p.id !== id),
+            currentProject: state.currentProject?.id === id ? null : state.currentProject,
+            isLoading: false,
+          }))
+        } catch (error) {
+          set({ 
+            error: error instanceof Error ? error.message : 'Failed to delete project',
+            isLoading: false 
+          })
+        }
+      },
+
+      duplicateProject: async (id: string) => {
+        const project = get().projects.find(p => p.id === id)
+        if (!project) throw new Error('Project not found')
+
+        const newProject = await get().createProject(
+          `${project.name} (Copy)`,
+          project.property_type || undefined
+        )
+
+        // Copy all data
+        const fullProject = {
+          ...newProject,
+          property: project.property,
+          analysis: project.analysis,
+          acquisition: project.acquisition,
+          financing: project.financing,
+          income: project.income,
+          expenses: project.expenses,
+          capital: project.capital,
+          growth: project.growth,
+          exit: project.exit,
+          scenarios: project.scenarios,
+        }
+
+        set(() => ({ currentProject: fullProject }))
+        await get().saveProject()
+        
+        return get().currentProject!
+      },
+
+      // Section update functions
+      updateProperty: (data) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                property: { ...state.currentProject.property!, ...data },
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      updateAnalysis: (data) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                analysis: { ...state.currentProject.analysis!, ...data },
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      updateAcquisition: (data) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                acquisition: { ...state.currentProject.acquisition!, ...data },
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      updateFinancing: (data) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                financing: { ...state.currentProject.financing!, ...data },
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      updateIncome: (data) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                income: { ...state.currentProject.income!, ...data },
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      updateExpenses: (data) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                expenses: { ...state.currentProject.expenses!, ...data },
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      updateCapital: (data) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                capital: { ...state.currentProject.capital!, ...data },
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      updateGrowth: (data) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                growth: { ...state.currentProject.growth!, ...data },
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      updateExit: (data) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                exit: { ...state.currentProject.exit!, ...data },
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      updateScenarios: (scenarios) => {
+        set(state => ({
+          currentProject: state.currentProject 
+            ? { 
+                ...state.currentProject, 
+                scenarios,
+                updated_at: new Date().toISOString()
+              }
+            : null
+        }))
+      },
+
+      clearError: () => set({ error: null }),
+
+      calculateCompleteness: () => {
+        const { currentProject } = get()
+        if (!currentProject) return 0
+
+        const requiredFields = [
+          currentProject.name,
+          currentProject.property_type,
+          currentProject.property?.address?.city,
+          currentProject.acquisition?.purchase_price,
+          currentProject.analysis?.hold_period_years,
+          currentProject.exit?.exit_cap_rate,
+        ]
+
+        const completedFields = requiredFields.filter(f => f !== null && f !== undefined && f !== '').length
+        return Math.round((completedFields / requiredFields.length) * 100)
+      },
+    }),
+    {
+      name: 'investor-pro-projects',
+      partialize: (state) => ({
+        projects: state.projects,
+      }),
     }
-  },
-
-  deleteProject: async (id: string) => {
-    set({ isLoading: true, error: null })
-    try {
-      // Delete project data first
-      await supabase.from('project_data').delete().eq('project_id', id)
-      
-      // Delete project
-      const { error } = await supabase.from('projects').delete().eq('id', id)
-      if (error) throw error
-
-      set(state => ({
-        projects: state.projects.filter(p => p.id !== id),
-        currentProject: state.currentProject?.id === id ? null : state.currentProject,
-        isLoading: false,
-      }))
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : 'Failed to delete project',
-        isLoading: false 
-      })
-    }
-  },
-
-  duplicateProject: async (id: string) => {
-    const project = get().projects.find(p => p.id === id)
-    if (!project) throw new Error('Project not found')
-
-    const newProject = await get().createProject(
-      `${project.name} (Copy)`,
-      project.property_type || undefined
-    )
-
-    // Copy all data
-    set(() => ({
-      currentProject: {
-        ...newProject,
-        property: project.property,
-        analysis: project.analysis,
-        acquisition: project.acquisition,
-        financing: project.financing,
-        income: project.income,
-        expenses: project.expenses,
-        capital: project.capital,
-        growth: project.growth,
-        exit: project.exit,
-        scenarios: project.scenarios,
-      }
-    }))
-
-    await get().saveProject()
-    return get().currentProject!
-  },
-
-  // Section update functions
-  updateProperty: (data) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            property: { ...state.currentProject.property!, ...data },
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  updateAnalysis: (data) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            analysis: { ...state.currentProject.analysis!, ...data },
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  updateAcquisition: (data) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            acquisition: { ...state.currentProject.acquisition!, ...data },
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  updateFinancing: (data) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            financing: { ...state.currentProject.financing!, ...data },
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  updateIncome: (data) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            income: { ...state.currentProject.income!, ...data },
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  updateExpenses: (data) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            expenses: { ...state.currentProject.expenses!, ...data },
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  updateCapital: (data) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            capital: { ...state.currentProject.capital!, ...data },
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  updateGrowth: (data) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            growth: { ...state.currentProject.growth!, ...data },
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  updateExit: (data) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            exit: { ...state.currentProject.exit!, ...data },
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  updateScenarios: (scenarios) => {
-    set(state => ({
-      currentProject: state.currentProject 
-        ? { 
-            ...state.currentProject, 
-            scenarios,
-            updated_at: new Date().toISOString()
-          }
-        : null
-    }))
-  },
-
-  clearError: () => set({ error: null }),
-
-  calculateCompleteness: () => {
-    const { currentProject } = get()
-    if (!currentProject) return 0
-
-    const requiredFields = [
-      currentProject.name,
-      currentProject.property_type,
-      currentProject.property?.address?.city,
-      currentProject.acquisition?.purchase_price,
-      currentProject.analysis?.hold_period_years,
-      currentProject.exit?.exit_cap_rate,
-    ]
-
-    const completedFields = requiredFields.filter(f => f !== null && f !== undefined && f !== '').length
-    return Math.round((completedFields / requiredFields.length) * 100)
-  },
-}))
-
+  )
+)
