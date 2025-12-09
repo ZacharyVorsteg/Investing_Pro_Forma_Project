@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { Plus, Trash2, Download, RotateCcw, Printer, CheckCircle, XCircle, TrendingUp, Info, AlertCircle, Lightbulb, ChevronUp, Settings, DollarSign, Percent } from 'lucide-react'
+import { Plus, Trash2, Download, RotateCcw, Printer, XCircle, TrendingUp, AlertCircle, Lightbulb, ChevronUp, Settings, DollarSign, Percent, Target, Zap } from 'lucide-react'
 
 // ============================================================================
 // TYPES
@@ -123,28 +123,67 @@ const fmtDec = (n: number, dec: number = 2): string => {
 }
 
 // ============================================================================
-// DEEP INTELLIGENCE ENGINE
+// SOPHISTICATED ANALYSIS ENGINE
 // ============================================================================
 
-interface DeepInsight {
-  type: 'critical' | 'warning' | 'opportunity' | 'strength' | 'tip'
+interface AnalysisInsight {
+  category: 'critical' | 'outlier' | 'benchmark' | 'sensitivity' | 'opportunity'
   title: string
-  message: string
-  action?: string
+  detail: string
   metric?: string
+  value?: string
+}
+
+interface BreakevenAnalysis {
+  occupancyBreakeven: number
+  rentBreakeven: number
+  rateBreakeven: number | null
+  yearsToPositiveCashFlow: number | null
+}
+
+interface SensitivityData {
+  rateImpact: { rate: number; cashFlow: number; dscr: number }[]
+  vacancyImpact: { vacancy: number; cashFlow: number; noi: number }[]
+  priceImpact: { price: number; capRate: number; coc: number }[]
 }
 
 interface InvestmentAnalysis {
-  overallGrade: string
-  overallScore: number
+  dealType: string
+  isCashDeal: boolean
+  score: number
+  grade: string
   gradeColor: string
-  strategy: string
-  strategyDescription: string
-  insights: DeepInsight[]
-  quickFixes: { label: string; field: keyof Inputs; currentValue: number; suggestedValue: number; impact: string }[]
+  
+  // Critical KPIs
+  kpis: {
+    label: string
+    value: string
+    benchmark: string
+    status: 'good' | 'neutral' | 'warning' | 'critical'
+    delta?: string
+  }[]
+  
+  // Breakeven
+  breakeven: BreakevenAnalysis
+  
+  // Sensitivity
+  sensitivity: SensitivityData
+  
+  // Outliers & Insights
+  insights: AnalysisInsight[]
+  
+  // Expense Analysis
+  expenseAnalysis: {
+    category: string
+    annual: number
+    perUnit: number
+    pctOfEGI: number
+    benchmark: { low: number; high: number }
+    status: 'low' | 'normal' | 'high' | 'outlier'
+  }[]
 }
 
-function generateDeepAnalysis(
+function generateSophisticatedAnalysis(
   inputs: Inputs,
   calc: {
     capRate: number
@@ -156,400 +195,483 @@ function generateDeepAnalysis(
     pricePerSqft: number
     year1NOI: number
     year1CashFlow: number
+    year1EGI: number
+    year1TotalExpenses: number
     annualDebtService: number
-    totalCashRequired: number
     grossRentMultiplier: number
     monthlyRent: number
     annualRent: number
     totalSqft: number
+    totalUnits: number
+    loanAmount: number
+    totalCashRequired: number
+    grossPotentialIncome: number
   }
 ): InvestmentAnalysis {
-  const insights: DeepInsight[] = []
-  const quickFixes: InvestmentAnalysis['quickFixes'] = []
-
-  const { capRate, cashOnCash, dscr, expenseRatio, ltv, pricePerUnit, pricePerSqft,
-          year1NOI, year1CashFlow, annualDebtService, grossRentMultiplier,
-          monthlyRent, totalSqft } = calc
+  const insights: AnalysisInsight[] = []
+  
+  const { capRate, cashOnCash, dscr, expenseRatio, pricePerUnit, pricePerSqft,
+          year1NOI, year1CashFlow, year1EGI, year1TotalExpenses, annualDebtService, grossRentMultiplier,
+          monthlyRent, totalSqft, totalUnits, loanAmount, grossPotentialIncome } = calc
   
   const { purchasePrice, downPaymentPct, interestRate, vacancyPct, managementPct,
           annualRentIncrease, annualExpenseIncrease, exitCapRate, realEstateTaxes,
-          repairsMaintenance } = inputs
+          insurance, repairsMaintenance, loanTermYears, water, sewer, gas, electric,
+          trash, landscaping } = inputs
 
   // ============================================
-  // CRITICAL ISSUES (Deal Breakers)
+  // DEAL TYPE DETECTION
+  // ============================================
+  
+  const isCashDeal = downPaymentPct >= 100 || loanAmount <= 0
+  let dealType: string
+  
+  if (isCashDeal) {
+    if (capRate >= 7) dealType = 'High-Yield Cash Acquisition'
+    else if (capRate >= 5) dealType = 'Stabilized Cash Acquisition'
+    else dealType = 'Premium Cash Acquisition'
+  } else if (year1CashFlow < 0) {
+    if (capRate > exitCapRate) dealType = 'Appreciation Play (Negative Leverage)'
+    else dealType = 'Speculative / Turnaround'
+  } else if (cashOnCash >= 10 && dscr >= 1.3) {
+    dealType = 'Cash Flow Optimized'
+  } else if (expenseRatio > 50) {
+    dealType = 'Value-Add / Repositioning'
+  } else {
+    dealType = 'Stabilized Investment'
+  }
+
+  // ============================================
+  // BREAKEVEN ANALYSIS
+  // ============================================
+  
+  // Occupancy breakeven: What occupancy covers all expenses + debt?
+  const totalObligations = year1TotalExpenses + annualDebtService
+  const occupancyBreakeven = grossPotentialIncome > 0 
+    ? Math.min(100, (totalObligations / grossPotentialIncome) * 100)
+    : 100
+  
+  // Rent breakeven: What monthly rent covers obligations?
+  const rentBreakeven = totalUnits > 0 
+    ? (totalObligations / totalUnits / 12) / (1 - vacancyPct/100 - managementPct/100)
+    : 0
+  
+  // Rate breakeven: At what rate does cash flow hit zero? (Only for leveraged deals)
+  let rateBreakeven: number | null = null
+  if (!isCashDeal && year1NOI > 0) {
+    // Iterate to find rate where debt service = NOI
+    for (let testRate = 1; testRate <= 15; testRate += 0.25) {
+      const monthlyRate = testRate / 100 / 12
+      const numPayments = loanTermYears * 12
+      const testPayment = loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / (Math.pow(1 + monthlyRate, numPayments) - 1)
+      const testDebtService = testPayment * 12
+      if (testDebtService >= year1NOI) {
+        rateBreakeven = testRate
+        break
+      }
+    }
+  }
+  
+  // Years to positive cash flow (if currently negative)
+  let yearsToPositiveCashFlow: number | null = null
+  if (year1CashFlow < 0 && annualRentIncrease > annualExpenseIncrease) {
+    const netGrowthRate = (1 + annualRentIncrease/100) / (1 + annualExpenseIncrease/100) - 1
+    if (netGrowthRate > 0) {
+      const targetNOI = annualDebtService
+      yearsToPositiveCashFlow = Math.ceil(Math.log(targetNOI / year1NOI) / Math.log(1 + netGrowthRate))
+      if (yearsToPositiveCashFlow > 30 || yearsToPositiveCashFlow < 0) yearsToPositiveCashFlow = null
+    }
+  }
+
+  // ============================================
+  // SENSITIVITY ANALYSIS
+  // ============================================
+  
+  const rateImpact: SensitivityData['rateImpact'] = []
+  if (!isCashDeal) {
+    for (let r = Math.max(4, interestRate - 2); r <= interestRate + 2; r += 0.5) {
+      const mr = r / 100 / 12
+      const np = loanTermYears * 12
+      const payment = loanAmount * (mr * Math.pow(1 + mr, np)) / (Math.pow(1 + mr, np) - 1)
+      const ds = payment * 12
+      const cf = year1NOI - ds
+      const testDscr = ds > 0 ? year1NOI / ds : 0
+      rateImpact.push({ rate: r, cashFlow: cf, dscr: testDscr })
+    }
+  }
+  
+  const vacancyImpact: SensitivityData['vacancyImpact'] = []
+  for (let v = 0; v <= 15; v += 2.5) {
+    const testEGI = grossPotentialIncome * (1 - v/100)
+    const testMgmt = testEGI * (managementPct/100)
+    const fixedExpenses = year1TotalExpenses - (year1EGI * managementPct/100)
+    const testTotalExp = fixedExpenses + testMgmt
+    const testNOI = testEGI - testTotalExp
+    const testCF = testNOI - annualDebtService
+    vacancyImpact.push({ vacancy: v, cashFlow: testCF, noi: testNOI })
+  }
+  
+  const priceImpact: SensitivityData['priceImpact'] = []
+  for (let pct = -15; pct <= 15; pct += 5) {
+    const testPrice = purchasePrice * (1 + pct/100)
+    const testCap = testPrice > 0 ? (year1NOI / testPrice) * 100 : 0
+    const testDown = testPrice * (downPaymentPct/100)
+    const testCash = testDown + inputs.closingCosts + inputs.immediateRepairs
+    const testCoC = testCash > 0 ? (year1CashFlow / testCash) * 100 : 0
+    priceImpact.push({ price: testPrice, capRate: testCap, coc: testCoC })
+  }
+
+  // ============================================
+  // EXPENSE BENCHMARKING (per unit, industry standards)
+  // ============================================
+  
+  const utilities = water + sewer + gas + electric
+  const expenseAnalysis: InvestmentAnalysis['expenseAnalysis'] = [
+    {
+      category: 'Real Estate Taxes',
+      annual: realEstateTaxes,
+      perUnit: realEstateTaxes / totalUnits,
+      pctOfEGI: (realEstateTaxes / year1EGI) * 100,
+      benchmark: { low: 2000, high: 5000 },
+      status: realEstateTaxes / totalUnits > 6000 ? 'outlier' : realEstateTaxes / totalUnits > 5000 ? 'high' : realEstateTaxes / totalUnits < 1500 ? 'low' : 'normal'
+    },
+    {
+      category: 'Insurance',
+      annual: insurance,
+      perUnit: insurance / totalUnits,
+      pctOfEGI: (insurance / year1EGI) * 100,
+      benchmark: { low: 400, high: 1200 },
+      status: insurance / totalUnits > 1500 ? 'outlier' : insurance / totalUnits > 1200 ? 'high' : insurance / totalUnits < 300 ? 'low' : 'normal'
+    },
+    {
+      category: 'Utilities',
+      annual: utilities,
+      perUnit: utilities / totalUnits,
+      pctOfEGI: (utilities / year1EGI) * 100,
+      benchmark: { low: 600, high: 1500 },
+      status: utilities / totalUnits > 2000 ? 'outlier' : utilities / totalUnits > 1500 ? 'high' : utilities / totalUnits < 400 ? 'low' : 'normal'
+    },
+    {
+      category: 'Repairs & Maintenance',
+      annual: repairsMaintenance,
+      perUnit: repairsMaintenance / totalUnits,
+      pctOfEGI: (repairsMaintenance / year1EGI) * 100,
+      benchmark: { low: 300, high: 600 },
+      status: repairsMaintenance / totalUnits > 800 ? 'outlier' : repairsMaintenance / totalUnits > 600 ? 'high' : repairsMaintenance / totalUnits < 200 ? 'low' : 'normal'
+    },
+    {
+      category: 'Landscaping & Grounds',
+      annual: landscaping + trash,
+      perUnit: (landscaping + trash) / totalUnits,
+      pctOfEGI: ((landscaping + trash) / year1EGI) * 100,
+      benchmark: { low: 200, high: 500 },
+      status: (landscaping + trash) / totalUnits > 700 ? 'outlier' : (landscaping + trash) / totalUnits > 500 ? 'high' : 'normal'
+    },
+  ]
+
+  // ============================================
+  // CRITICAL KPIs
+  // ============================================
+  
+  const kpis: InvestmentAnalysis['kpis'] = []
+  
+  // Price per SF
+  const avgPricePerSF = 250 // Market benchmark
+  kpis.push({
+    label: 'Price / SF',
+    value: `$${fmtDec(pricePerSqft, 0)}`,
+    benchmark: `Market avg ~$${avgPricePerSF}`,
+    status: pricePerSqft > avgPricePerSF * 1.3 ? 'warning' : pricePerSqft < avgPricePerSF * 0.8 ? 'good' : 'neutral',
+    delta: `${pricePerSqft > avgPricePerSF ? '+' : ''}${fmtDec(((pricePerSqft - avgPricePerSF) / avgPricePerSF) * 100, 0)}% vs avg`
+  })
+  
+  // Price per Unit
+  const avgPricePerUnit = 150000
+  kpis.push({
+    label: 'Price / Unit',
+    value: `$${fmt(pricePerUnit)}`,
+    benchmark: `Market avg ~$${fmt(avgPricePerUnit)}`,
+    status: pricePerUnit > avgPricePerUnit * 1.4 ? 'warning' : pricePerUnit < avgPricePerUnit * 0.7 ? 'good' : 'neutral',
+    delta: `${pricePerUnit > avgPricePerUnit ? '+' : ''}${fmtDec(((pricePerUnit - avgPricePerUnit) / avgPricePerUnit) * 100, 0)}% vs avg`
+  })
+  
+  // GRM
+  kpis.push({
+    label: 'Gross Rent Multiplier',
+    value: fmtDec(grossRentMultiplier, 1),
+    benchmark: '8-12 typical',
+    status: grossRentMultiplier > 14 ? 'warning' : grossRentMultiplier < 8 ? 'good' : 'neutral'
+  })
+  
+  // Expense per Unit
+  const expensePerUnit = year1TotalExpenses / totalUnits
+  kpis.push({
+    label: 'OpEx / Unit',
+    value: `$${fmt(expensePerUnit)}`,
+    benchmark: '$4,500-7,000 typical',
+    status: expensePerUnit > 8000 ? 'warning' : expensePerUnit < 4000 ? 'good' : 'neutral'
+  })
+  
+  // Rent per SF
+  const rentPerSF = monthlyRent / totalSqft
+  kpis.push({
+    label: 'Rent / SF',
+    value: `$${fmtDec(rentPerSF, 2)}`,
+    benchmark: '$1.50-2.50 typical',
+    status: rentPerSF > 3 ? 'good' : rentPerSF < 1.2 ? 'warning' : 'neutral'
+  })
+  
+  // Tax Rate (as % of value)
+  const effectiveTaxRate = (realEstateTaxes / purchasePrice) * 100
+  kpis.push({
+    label: 'Effective Tax Rate',
+    value: `${fmtDec(effectiveTaxRate, 2)}%`,
+    benchmark: '1.0-2.5% typical',
+    status: effectiveTaxRate > 3 ? 'critical' : effectiveTaxRate > 2.5 ? 'warning' : 'neutral'
+  })
+
+  // ============================================
+  // INSIGHTS - Quantified & Sophisticated
   // ============================================
 
-  // Negative Cash Flow Analysis
-  if (year1CashFlow < 0) {
-    const monthlyShortfall = Math.abs(year1CashFlow / 12)
-    const annualShortfall = Math.abs(year1CashFlow)
-    
+  // === CASH DEAL SPECIFIC ===
+  if (isCashDeal) {
     insights.push({
-      type: 'critical',
-      title: 'Negative Cash Flow',
-      message: `This property loses $${fmt(monthlyShortfall)}/month ($${fmt(annualShortfall)}/year). You'll need to contribute this amount from other income sources.`,
-      action: dscr < 1 
-        ? `Increase down payment to ${Math.ceil((1 - (year1NOI / (annualDebtService * 1.1)) * purchasePrice / purchasePrice) * 100)}% to achieve positive cash flow.`
-        : 'Look for ways to increase rent or reduce expenses.',
-      metric: 'cashFlow'
+      category: 'benchmark',
+      title: 'All-Cash Acquisition',
+      detail: `Unleveraged return of ${fmtDec(capRate)}% (cap rate). Leveraging at 75% LTV with ${interestRate}% debt would ${capRate > interestRate ? `boost CoC to ~${fmtDec((year1NOI - (purchasePrice * 0.75 * interestRate/100 * 0.8)) / (purchasePrice * 0.25 + inputs.closingCosts) * 100)}%` : 'result in negative leverage'}.`,
+      metric: 'leverage',
+      value: 'All Cash'
     })
-
-    // Suggest down payment fix
-    const targetDebt = year1NOI / 1.1 // Target 1.1 DSCR
-    const targetLoan = targetDebt > 0 ? targetDebt * ((Math.pow(1 + interestRate/100/12, inputs.loanTermYears*12) - 1) / (interestRate/100/12 * Math.pow(1 + interestRate/100/12, inputs.loanTermYears*12))) : 0
-    const targetDownPct = Math.min(100, Math.max(20, (1 - targetLoan / purchasePrice) * 100))
-    
-    if (targetDownPct > downPaymentPct && targetDownPct <= 50) {
-      quickFixes.push({
-        label: 'Increase Down Payment',
-        field: 'downPaymentPct',
-        currentValue: downPaymentPct,
-        suggestedValue: Math.ceil(targetDownPct),
-        impact: 'Achieve positive cash flow'
+  }
+  
+  // === LEVERAGE ANALYSIS ===
+  if (!isCashDeal) {
+    const leverageSpread = capRate - interestRate
+    if (leverageSpread < 0) {
+      insights.push({
+        category: 'critical',
+        title: 'Negative Leverage',
+        detail: `Cap rate (${fmtDec(capRate)}%) is ${fmtDec(Math.abs(leverageSpread))} bps below debt cost (${interestRate}%). Each dollar of debt destroys value. Breakeven rate: ${rateBreakeven ? fmtDec(rateBreakeven) + '%' : 'N/A'}.`,
+        metric: 'leverage',
+        value: `${fmtDec(leverageSpread)} bps`
+      })
+    } else if (leverageSpread < 1) {
+      insights.push({
+        category: 'benchmark',
+        title: 'Thin Leverage Spread',
+        detail: `Only ${fmtDec(leverageSpread * 100, 0)} bps between cap rate and debt cost. Minimal yield enhancement from leverage. Rate sensitivity: each 50 bps increase reduces cash flow by ~$${fmt(loanAmount * 0.005 * 0.8)}/yr.`,
+        metric: 'leverage',
+        value: `+${fmtDec(leverageSpread * 100, 0)} bps`
+      })
+    }
+  }
+  
+  // === RATE SENSITIVITY ===
+  if (!isCashDeal && rateBreakeven) {
+    const cushion = rateBreakeven - interestRate
+    insights.push({
+      category: 'sensitivity',
+      title: 'Interest Rate Cushion',
+      detail: `Cash flow turns negative at ${fmtDec(rateBreakeven)}% (${fmtDec(cushion)} pts above current rate). A ${fmtDec(cushion/2)} pt rate increase cuts annual cash flow by ~$${fmt(Math.abs(rateImpact.find(r => Math.abs(r.rate - interestRate - cushion/2) < 0.3)?.cashFlow || 0) - Math.abs(year1CashFlow))}.`,
+      metric: 'rate',
+      value: `${fmtDec(cushion)} pts cushion`
+    })
+  }
+  
+  // === BREAKEVEN ===
+  insights.push({
+    category: 'benchmark',
+    title: 'Occupancy Breakeven',
+    detail: `Requires ${fmtDec(occupancyBreakeven, 1)}% occupancy to cover all operating expenses${isCashDeal ? '' : ' and debt service'}. Current assumption: ${100 - vacancyPct}%. Cushion: ${fmtDec(100 - vacancyPct - occupancyBreakeven, 1)} pts.`,
+    metric: 'breakeven',
+    value: `${fmtDec(occupancyBreakeven, 1)}%`
+  })
+  
+  // Rent breakeven
+  const currentAvgRent = monthlyRent / totalUnits
+  const rentCushion = ((currentAvgRent - rentBreakeven) / currentAvgRent) * 100
+  insights.push({
+    category: 'benchmark',
+    title: 'Rent Breakeven',
+    detail: `Minimum avg rent to breakeven: $${fmt(rentBreakeven)}/unit/mo (current: $${fmt(currentAvgRent)}). ${rentCushion > 0 ? `${fmtDec(rentCushion, 0)}% margin before breakeven.` : `Currently ${fmtDec(Math.abs(rentCushion), 0)}% below breakeven.`}`,
+    metric: 'breakeven',
+    value: `$${fmt(rentBreakeven)}/unit`
+  })
+  
+  // === EXPENSE OUTLIERS ===
+  const outlierExpenses = expenseAnalysis.filter(e => e.status === 'outlier' || e.status === 'high')
+  if (outlierExpenses.length > 0) {
+    outlierExpenses.forEach(exp => {
+      const overage = exp.perUnit - exp.benchmark.high
+      const totalOverage = overage * totalUnits
+      insights.push({
+        category: 'outlier',
+        title: `${exp.category} Above Benchmark`,
+        detail: `$${fmt(exp.perUnit)}/unit vs benchmark ceiling of $${fmt(exp.benchmark.high)}. Excess: $${fmt(overage)}/unit ($${fmt(totalOverage)}/yr total). Reducing to benchmark adds $${fmt(totalOverage / (exitCapRate/100))} to exit value.`,
+        metric: 'expenses',
+        value: `+$${fmt(overage)}/unit`
+      })
+    })
+  }
+  
+  // Low expense warning
+  const lowExpenses = expenseAnalysis.filter(e => e.status === 'low')
+  if (lowExpenses.length > 0) {
+    lowExpenses.forEach(exp => {
+      insights.push({
+        category: 'outlier',
+        title: `${exp.category} Below Typical`,
+        detail: `$${fmt(exp.perUnit)}/unit is below typical range ($${fmt(exp.benchmark.low)}-$${fmt(exp.benchmark.high)}). Verify this isn't understated—could indicate deferred maintenance or upcoming increases.`,
+        metric: 'expenses',
+        value: `$${fmt(exp.perUnit)}/unit`
+      })
+    })
+  }
+  
+  // === TAX ANALYSIS ===
+  if (effectiveTaxRate > 2.5) {
+    insights.push({
+      category: 'critical',
+      title: 'High Tax Burden',
+      detail: `Effective rate of ${fmtDec(effectiveTaxRate)}% exceeds typical 1.0-2.5% range. Taxes consume ${fmtDec((realEstateTaxes/year1EGI)*100, 1)}% of EGI. Verify assessment basis and appeal potential.`,
+      metric: 'taxes',
+      value: `${fmtDec(effectiveTaxRate)}% effective`
+    })
+  }
+  
+  // === GROWTH DIFFERENTIAL ===
+  const growthDiff = annualRentIncrease - annualExpenseIncrease
+  if (Math.abs(growthDiff) >= 0.5) {
+    insights.push({
+      category: growthDiff > 0 ? 'opportunity' : 'benchmark',
+      title: growthDiff > 0 ? 'Favorable Growth Spread' : 'Expense Growth Exceeds Rent',
+      detail: growthDiff > 0 
+        ? `Rent growth (${annualRentIncrease}%) exceeds expense growth (${annualExpenseIncrease}%) by ${fmtDec(growthDiff)} pts. NOI margin expands ~${fmtDec(growthDiff * expenseRatio / 100, 1)}% annually.`
+        : `Expenses (${annualExpenseIncrease}%) outpace rent (${annualRentIncrease}%) by ${fmtDec(Math.abs(growthDiff))} pts. Margin compression of ~${fmtDec(Math.abs(growthDiff) * expenseRatio / 100, 1)}% annually.`,
+      metric: 'growth',
+      value: `${growthDiff > 0 ? '+' : ''}${fmtDec(growthDiff)} pts`
+    })
+  }
+  
+  // === YEARS TO POSITIVE (if negative cash flow) ===
+  if (yearsToPositiveCashFlow !== null && year1CashFlow < 0) {
+    insights.push({
+      category: 'sensitivity',
+      title: 'Path to Positive Cash Flow',
+      detail: `At current growth rates, cash flow turns positive in Year ${yearsToPositiveCashFlow}. Cumulative negative cash flow until breakeven: ~$${fmt(Math.abs(year1CashFlow) * yearsToPositiveCashFlow * 0.6)}.`,
+      metric: 'cashflow',
+      value: `Year ${yearsToPositiveCashFlow}`
+    })
+  }
+  
+  // === EXIT ANALYSIS ===
+  const exitCapSpread = exitCapRate - capRate
+  if (Math.abs(exitCapSpread) >= 0.5) {
+    insights.push({
+      category: exitCapSpread < 0 ? 'benchmark' : 'opportunity',
+      title: exitCapSpread < 0 ? 'Assumes Cap Rate Compression' : 'Conservative Exit Assumption',
+      detail: exitCapSpread < 0
+        ? `Exit cap (${exitCapRate}%) is ${fmtDec(Math.abs(exitCapSpread))} pts below entry (${fmtDec(capRate)}%). This implies ${fmtDec(Math.abs(exitCapSpread) / capRate * 100, 0)}% value increase from cap compression alone—validate market trajectory.`
+        : `Exit cap (${exitCapRate}%) exceeds entry by ${fmtDec(exitCapSpread)} pts. Conservative assumption builds in cushion for market softening.`,
+      metric: 'exit',
+      value: `${exitCapSpread > 0 ? '+' : ''}${fmtDec(exitCapSpread)} pts`
+    })
+  }
+  
+  // === PRICE PER SF OUTLIER ===
+  if (pricePerSqft > 400 || pricePerSqft < 150) {
+    insights.push({
+      category: 'outlier',
+      title: pricePerSqft > 400 ? 'Premium Price/SF' : 'Below-Market Price/SF',
+      detail: pricePerSqft > 400
+        ? `$${fmtDec(pricePerSqft, 0)}/SF is elevated for multifamily. Typical range: $150-350/SF. Verify comps support this basis—may limit exit optionality.`
+        : `$${fmtDec(pricePerSqft, 0)}/SF is below typical multifamily pricing. Investigate condition, location factors, or motivated seller dynamics.`,
+      metric: 'basis',
+      value: `$${fmtDec(pricePerSqft, 0)}/SF`
+    })
+  }
+  
+  // === DSCR ANALYSIS ===
+  if (!isCashDeal) {
+    if (dscr < 1.0) {
+      insights.push({
+        category: 'critical',
+        title: 'DSCR Below 1.0x',
+        detail: `NOI ($${fmt(year1NOI)}) fails to cover debt service ($${fmt(annualDebtService)}) by $${fmt(annualDebtService - year1NOI)}/yr. Annual cash contribution required. Most lenders require 1.20-1.25x minimum.`,
+        metric: 'dscr',
+        value: `${fmtDec(dscr, 2)}x`
+      })
+    } else if (dscr < 1.25) {
+      insights.push({
+        category: 'benchmark',
+        title: 'Tight DSCR',
+        detail: `${fmtDec(dscr, 2)}x coverage provides ${fmtDec((dscr - 1) * 100, 0)}% buffer above debt service. A ${fmtDec(5/dscr, 0)}% NOI decline would breach 1.0x. May limit refinancing options.`,
+        metric: 'dscr',
+        value: `${fmtDec(dscr, 2)}x`
       })
     }
   }
 
-  // DSCR Below 1.0
-  if (dscr < 1.0 && dscr > 0) {
-    insights.push({
-      type: 'critical',
-      title: 'Debt Service Coverage Below 1.0',
-      message: `Your NOI ($${fmt(year1NOI)}) doesn't cover your debt service ($${fmt(annualDebtService)}). Most lenders require DSCR of 1.25+. This deal won't qualify for conventional financing.`,
-      action: 'Either negotiate a lower purchase price, bring more equity, or find ways to increase NOI.',
-      metric: 'dscr'
-    })
-  }
-
   // ============================================
-  // CONTEXTUAL WARNINGS
+  // SCORING
   // ============================================
-
-  // High Interest Rate in Current Market
-  if (interestRate >= 7.5) {
-    insights.push({
-      type: 'warning',
-      title: 'High Interest Rate Environment',
-      message: `At ${interestRate}% interest, your debt service is eating into cash flow. Consider if this deal makes sense to buy now or wait for rate drops.`,
-      action: 'Model scenarios with lower rates (5-6%) to see future refinance potential.',
-      metric: 'interestRate'
-    })
-  }
-
-  // High LTV with Low DSCR
-  if (ltv > 75 && dscr < 1.25) {
-    insights.push({
-      type: 'warning',
-      title: 'Risky Leverage Profile',
-      message: `High leverage (${fmtDec(ltv, 0)}% LTV) combined with thin debt coverage (${fmtDec(dscr)} DSCR) leaves no margin for error. Any vacancy spike or unexpected expense could cause default.`,
-      action: 'Consider 25-30% down payment minimum for this property.',
-      metric: 'leverage'
-    })
-  }
-
-  // Expense Growth > Rent Growth
-  if (annualExpenseIncrease > annualRentIncrease) {
-    const yearsToNegative = Math.floor(Math.log(1 + (cashOnCash > 0 ? cashOnCash/100 : 0.01)) / Math.log((1 + annualExpenseIncrease/100)/(1 + annualRentIncrease/100)))
-    insights.push({
-      type: 'warning',
-      title: 'Expense Growth Exceeds Rent Growth',
-      message: `Your expenses grow at ${annualExpenseIncrease}% while rents grow at ${annualRentIncrease}%. This compresses margins over time.`,
-      action: yearsToNegative > 0 && yearsToNegative < 15 
-        ? `At these rates, cash flow could turn negative around year ${yearsToNegative}.`
-        : 'Consider if rent growth assumption is realistic for your market.',
-      metric: 'growth'
-    })
-    
-    quickFixes.push({
-      label: 'Match Growth Rates',
-      field: 'annualExpenseIncrease',
-      currentValue: annualExpenseIncrease,
-      suggestedValue: annualRentIncrease,
-      impact: 'Maintain margins over time'
-    })
-  }
-
-  // High Property Taxes
-  const taxRate = purchasePrice > 0 ? (realEstateTaxes / purchasePrice) * 100 : 0
-  if (taxRate > 2.5) {
-    insights.push({
-      type: 'warning',
-      title: 'High Property Tax Burden',
-      message: `Property taxes of $${fmt(realEstateTaxes)} represent ${fmtDec(taxRate)}% of purchase price - significantly above average. This market may have reassessment risk.`,
-      action: 'Verify if taxes will increase after sale. Many jurisdictions reassess on transfer.',
-      metric: 'taxes'
-    })
-  }
-
-  // Low Vacancy Assumption
-  if (vacancyPct < 5) {
-    insights.push({
-      type: 'warning',
-      title: 'Aggressive Vacancy Assumption',
-      message: `${vacancyPct}% vacancy is optimistic. Industry standard is 5-8%. One vacant unit could significantly impact your returns.`,
-      action: 'Run the numbers with 7-8% vacancy to stress test.',
-      metric: 'vacancy'
-    })
-    
-    quickFixes.push({
-      label: 'Conservative Vacancy',
-      field: 'vacancyPct',
-      currentValue: vacancyPct,
-      suggestedValue: 5,
-      impact: 'More realistic projection'
-    })
-  }
-
-  // No Management Fee (Self-Managing)
-  if (managementPct === 0) {
-    insights.push({
-      type: 'warning',
-      title: 'No Management Fee Budgeted',
-      message: `You're assuming self-management, but your time has value. If circumstances change and you need a manager, it will cost 5-10% of collected rent.`,
-      action: 'Budget at least 5% for management to see true passive returns.',
-      metric: 'management'
-    })
-  }
-
-  // Low Repairs Budget
-  const repairsPerUnit = repairsMaintenance / inputs.units.length
-  if (repairsPerUnit < 300 && inputs.units.length > 0) {
-    insights.push({
-      type: 'warning',
-      title: 'Low Repairs & Maintenance Budget',
-      message: `$${fmt(repairsPerUnit)}/unit/year for repairs may be insufficient. Older properties typically need $400-600/unit.`,
-      action: 'Review property condition and age. Deferred maintenance can become capital expenditures.',
-      metric: 'repairs'
-    })
-  }
-
-  // ============================================
-  // OPPORTUNITIES
-  // ============================================
-
-  // Below Market Rents
-  const avgRentPerSqft = monthlyRent / totalSqft
-  if (avgRentPerSqft < 2.0 && pricePerSqft > 200) {
-    insights.push({
-      type: 'opportunity',
-      title: 'Potential Rent Upside',
-      message: `At $${fmtDec(avgRentPerSqft)}/sqft, rents may be below market for a property priced at $${fmt(pricePerSqft)}/sqft. Research comparable rents in the area.`,
-      action: 'If rents can increase 10-15%, this could significantly improve returns.',
-      metric: 'rents'
-    })
-  }
-
-  // Value-Add Indicators
-  if (expenseRatio > 50 && capRate > 5) {
-    insights.push({
-      type: 'opportunity',
-      title: 'Value-Add Through Expense Reduction',
-      message: `${fmtDec(expenseRatio, 0)}% expense ratio is above average. Every 5% reduction in expenses adds ~$${fmt((calc.year1NOI * 0.05) / (exitCapRate/100))} to property value.`,
-      action: 'Audit utility bills, insurance quotes, and tax assessments for savings.',
-      metric: 'expenses'
-    })
-  }
-
-  // Cap Rate vs Exit Cap Rate
-  if (capRate > exitCapRate + 0.5) {
-    const projectedAppreciation = (year1NOI / (exitCapRate/100)) - purchasePrice
-    insights.push({
-      type: 'opportunity',
-      title: 'Built-In Appreciation Potential',
-      message: `Buying at ${fmtDec(capRate)}% cap and exiting at ${exitCapRate}% cap implies $${fmt(projectedAppreciation)} in appreciation from cap rate compression alone.`,
-      action: 'Validate that exit cap rate assumption is realistic for this market.',
-      metric: 'appreciation'
-    })
-  }
-
-  // Good GRM
-  if (grossRentMultiplier < 10 && grossRentMultiplier > 0) {
-    insights.push({
-      type: 'strength',
-      title: 'Attractive Gross Rent Multiplier',
-      message: `GRM of ${fmtDec(grossRentMultiplier, 1)} indicates solid income relative to price. Properties under 10 GRM often cash flow better.`,
-      metric: 'grm'
-    })
-  }
-
-  // ============================================
-  // STRENGTHS
-  // ============================================
-
-  if (dscr >= 1.25) {
-    insights.push({
-      type: 'strength',
-      title: 'Healthy Debt Coverage',
-      message: `DSCR of ${fmtDec(dscr)} provides a ${fmtDec((dscr - 1) * 100, 0)}% cushion above debt service. This buffer protects against vacancy or expense surprises.`,
-      metric: 'dscr'
-    })
-  }
-
-  if (cashOnCash >= 8) {
-    insights.push({
-      type: 'strength',
-      title: 'Strong Cash-on-Cash Return',
-      message: `${fmtDec(cashOnCash)}% CoC outperforms most passive investments. Your equity is generating meaningful current income.`,
-      metric: 'coc'
-    })
-  }
-
-  if (expenseRatio <= 40) {
-    insights.push({
-      type: 'strength',
-      title: 'Efficient Operations',
-      message: `${fmtDec(expenseRatio, 0)}% expense ratio shows well-controlled costs. This leaves more NOI flowing to the bottom line.`,
-      metric: 'expenses'
-    })
-  }
-
-  if (ltv <= 70) {
-    insights.push({
-      type: 'strength',
-      title: 'Conservative Leverage',
-      message: `${fmtDec(ltv, 0)}% LTV gives you equity cushion against market downturns and likely qualifies for better loan terms.`,
-      metric: 'leverage'
-    })
-  }
-
-  // ============================================
-  // STRATEGIC TIPS
-  // ============================================
-
-  // Interest Rate Sensitivity
-  if (interestRate >= 6) {
-    const lowerRateSavings = annualDebtService - (calc.totalCashRequired * 0.05 * 12) // Rough estimate at 5%
-    insights.push({
-      type: 'tip',
-      title: 'Refinance Opportunity Watch',
-      message: `If rates drop to 5%, refinancing could save approximately $${fmt(lowerRateSavings * 0.3)}/year in debt service.`,
-      action: 'Set rate alerts. Consider ARM or shorter-term loan if you plan to refinance.'
-    })
-  }
-
-  // Exit Strategy
-  if (exitCapRate < capRate) {
-    insights.push({
-      type: 'tip',
-      title: 'Exit Cap Rate Assumption',
-      message: `You're assuming cap rate compression from ${fmtDec(capRate)}% to ${exitCapRate}%. This requires market improvement or significant value-add.`,
-      action: 'Conservative approach: use same or higher exit cap than entry.'
-    })
-    
-    quickFixes.push({
-      label: 'Match Entry Cap',
-      field: 'exitCapRate',
-      currentValue: exitCapRate,
-      suggestedValue: Math.ceil(capRate * 10) / 10,
-      impact: 'More conservative exit'
-    })
-  }
-
-  // Price Per Unit Context
-  if (pricePerUnit > 250000) {
-    insights.push({
-      type: 'tip',
-      title: 'Premium Price Per Unit',
-      message: `At $${fmt(pricePerUnit)}/unit, you're paying a premium. Ensure location, condition, and rent potential justify this pricing.`,
-      action: 'Compare to recent sales in the immediate area.'
-    })
-  } else if (pricePerUnit < 100000) {
-    insights.push({
-      type: 'tip',
-      title: 'Below-Market Price Per Unit',
-      message: `$${fmt(pricePerUnit)}/unit is below typical multifamily pricing. Investigate why - could be opportunity or hidden issues.`,
-      action: 'Thorough inspection recommended. Check for deferred maintenance.'
-    })
-  }
-
-  // ============================================
-  // CALCULATE OVERALL GRADE
-  // ============================================
-
-  let score = 50 // Start at middle
-
-  // Cash Flow Impact (25 points)
-  if (cashOnCash >= 10) score += 25
-  else if (cashOnCash >= 8) score += 20
-  else if (cashOnCash >= 5) score += 12
-  else if (cashOnCash >= 0) score += 5
+  
+  let score = 50
+  
+  // Cash flow weighted heavily
+  if (cashOnCash >= 10) score += 20
+  else if (cashOnCash >= 8) score += 15
+  else if (cashOnCash >= 5) score += 8
+  else if (cashOnCash >= 0) score += 2
   else score -= 15
-
-  // DSCR Impact (20 points)
-  if (dscr >= 1.5) score += 20
-  else if (dscr >= 1.25) score += 15
-  else if (dscr >= 1.1) score += 8
-  else if (dscr >= 1.0) score += 0
-  else score -= 20
-
-  // Cap Rate Impact (15 points)
-  if (capRate >= 8) score += 15
-  else if (capRate >= 6) score += 10
-  else if (capRate >= 5) score += 5
-  else score -= 5
-
-  // Expense Ratio Impact (10 points)
-  if (expenseRatio <= 40) score += 10
-  else if (expenseRatio <= 50) score += 5
-  else if (expenseRatio <= 60) score += 0
-  else score -= 10
-
-  // Leverage Impact (10 points)
-  if (ltv <= 65) score += 10
-  else if (ltv <= 75) score += 5
-  else score -= 5
-
+  
+  // DSCR or cash deal
+  if (isCashDeal) score += 10
+  else if (dscr >= 1.4) score += 15
+  else if (dscr >= 1.25) score += 10
+  else if (dscr >= 1.1) score += 3
+  else if (dscr < 1) score -= 15
+  
+  // Cap rate
+  if (capRate >= 7) score += 12
+  else if (capRate >= 5.5) score += 6
+  else if (capRate < 4) score -= 8
+  
+  // Expense efficiency
+  if (expenseRatio <= 40) score += 8
+  else if (expenseRatio > 55) score -= 8
+  
+  // Outliers penalty
+  score -= outlierExpenses.length * 3
+  
   score = Math.max(0, Math.min(100, score))
-
-  let overallGrade: string
+  
+  let grade: string
   let gradeColor: string
-  if (score >= 85) { overallGrade = 'A'; gradeColor = 'emerald' }
-  else if (score >= 75) { overallGrade = 'B+'; gradeColor = 'blue' }
-  else if (score >= 65) { overallGrade = 'B'; gradeColor = 'blue' }
-  else if (score >= 55) { overallGrade = 'C+'; gradeColor = 'yellow' }
-  else if (score >= 45) { overallGrade = 'C'; gradeColor = 'yellow' }
-  else if (score >= 35) { overallGrade = 'D'; gradeColor = 'orange' }
-  else { overallGrade = 'F'; gradeColor = 'red' }
+  if (score >= 80) { grade = 'A'; gradeColor = 'emerald' }
+  else if (score >= 70) { grade = 'B+'; gradeColor = 'blue' }
+  else if (score >= 60) { grade = 'B'; gradeColor = 'blue' }
+  else if (score >= 50) { grade = 'C+'; gradeColor = 'yellow' }
+  else if (score >= 40) { grade = 'C'; gradeColor = 'yellow' }
+  else if (score >= 30) { grade = 'D'; gradeColor = 'orange' }
+  else { grade = 'F'; gradeColor = 'red' }
 
-  // Determine Strategy
-  let strategy: string
-  let strategyDescription: string
-
-  if (year1CashFlow < 0 && expenseRatio > 50) {
-    strategy = 'Heavy Value-Add / Turnaround'
-    strategyDescription = 'This property needs significant work. Expect negative cash flow during stabilization. Best for experienced operators with capital reserves.'
-  } else if (year1CashFlow < 0) {
-    strategy = 'Appreciation Play'
-    strategyDescription = 'Negative cash flow means you\'re betting on appreciation. Ensure you can cover monthly shortfalls and have a clear exit timeline.'
-  } else if (capRate > 7 && expenseRatio > 45) {
-    strategy = 'Value-Add Opportunity'
-    strategyDescription = 'Higher cap rate with room for expense optimization. Improve operations to boost NOI and force appreciation.'
-  } else if (cashOnCash > 8 && dscr > 1.25) {
-    strategy = 'Cash Flow Investment'
-    strategyDescription = 'Strong current returns with solid debt coverage. Ideal for passive income seekers prioritizing cash flow over appreciation.'
-  } else if (capRate < 5 && pricePerUnit > 200000) {
-    strategy = 'Core / Trophy Asset'
-    strategyDescription = 'Premium pricing for prime location/quality. Returns come from stability and long-term appreciation. Lower risk, lower yield.'
-  } else if (inputs.units.length <= 4 && pricePerUnit < 150000) {
-    strategy = 'House Hack Candidate'
-    strategyDescription = 'Small property at accessible price point. Consider living in one unit to reduce housing costs while building equity.'
-  } else {
-    strategy = 'Core-Plus Investment'
-    strategyDescription = 'Balanced risk/return profile. Modest cash flow with potential for improvement. Suitable for most investors.'
-  }
-
-  // Sort insights by priority
-  const priorityOrder = { critical: 0, warning: 1, opportunity: 2, strength: 3, tip: 4 }
-  insights.sort((a, b) => priorityOrder[a.type] - priorityOrder[b.type])
+  // Sort insights by category priority
+  const categoryOrder = { critical: 0, outlier: 1, sensitivity: 2, benchmark: 3, opportunity: 4 }
+  insights.sort((a, b) => categoryOrder[a.category] - categoryOrder[b.category])
 
   return {
-    overallGrade,
-    overallScore: score,
+    dealType,
+    isCashDeal,
+    score,
+    grade,
     gradeColor,
-    strategy,
-    strategyDescription,
+    kpis,
+    breakeven: { occupancyBreakeven, rentBreakeven, rateBreakeven, yearsToPositiveCashFlow },
+    sensitivity: { rateImpact, vacancyImpact, priceImpact },
     insights,
-    quickFixes: quickFixes.slice(0, 4) // Top 4 suggestions
+    expenseAnalysis,
   }
 }
 
@@ -559,7 +681,7 @@ function generateDeepAnalysis(
 
 export function ProFormaApp() {
   const [inputs, setInputs] = useState<Inputs>(() => {
-    const saved = localStorage.getItem('proforma-v5')
+    const saved = localStorage.getItem('proforma-v6')
     if (saved) {
       try {
         return { ...defaultInputs, ...JSON.parse(saved) }
@@ -574,7 +696,7 @@ export function ProFormaApp() {
   const sectionsRef = useRef<{ [key: string]: HTMLElement | null }>({})
 
   useEffect(() => {
-    localStorage.setItem('proforma-v5', JSON.stringify(inputs))
+    localStorage.setItem('proforma-v6', JSON.stringify(inputs))
   }, [inputs])
 
   const set = <K extends keyof Inputs>(key: K, value: Inputs[K]) => {
@@ -611,7 +733,7 @@ export function ProFormaApp() {
   }
 
   const reset = () => {
-    if (confirm('Reset all values to the example property?')) {
+    if (confirm('Reset all values?')) {
       setInputs(defaultInputs)
     }
   }
@@ -659,7 +781,6 @@ export function ProFormaApp() {
     const annualDebtService = monthlyMortgage * 12
     const totalCashRequired = downPayment + closingCosts + immediateRepairs
 
-    const utilities = water + sewer + gas + electric
     const baseExpenses = { realEstateTaxes, insurance, water, sewer, gas, electric, trash, landscaping, snowRemoval, repairsMaintenance, pestControl, legalAccounting, advertising, miscellaneous, replacementReserves }
 
     const year1Vacancy = grossPotentialIncome * (vacancyPct / 100)
@@ -672,7 +793,7 @@ export function ProFormaApp() {
     const capRate = purchasePrice > 0 ? (year1NOI / purchasePrice) * 100 : 0
     const cashOnCash = totalCashRequired > 0 ? (year1CashFlow / totalCashRequired) * 100 : 0
     const grossRentMultiplier = annualRent > 0 ? purchasePrice / annualRent : 0
-    const dscr = annualDebtService > 0 ? year1NOI / annualDebtService : 0
+    const dscr = annualDebtService > 0 ? year1NOI / annualDebtService : 999
     const expenseRatio = year1EGI > 0 ? (year1TotalExpenses / year1EGI) * 100 : 0
 
     // Year-by-year projection
@@ -683,19 +804,6 @@ export function ProFormaApp() {
       grossPotentialIncome: number
       vacancy: number
       effectiveGrossIncome: number
-      realEstateTaxes: number
-      insurance: number
-      utilities: number
-      trash: number
-      landscaping: number
-      snowRemoval: number
-      repairsMaintenance: number
-      pestControl: number
-      management: number
-      legalAccounting: number
-      advertising: number
-      miscellaneous: number
-      replacementReserves: number
       totalOperatingExpenses: number
       netOperatingIncome: number
       debtService: number
@@ -714,23 +822,9 @@ export function ProFormaApp() {
       const vacancy = gpi * (vacancyPct / 100)
       const egi = gpi - vacancy
 
-      const yearExpenses = {
-        realEstateTaxes: baseExpenses.realEstateTaxes * expenseGrowth,
-        insurance: baseExpenses.insurance * expenseGrowth,
-        utilities: utilities * expenseGrowth,
-        trash: baseExpenses.trash * expenseGrowth,
-        landscaping: baseExpenses.landscaping * expenseGrowth,
-        snowRemoval: baseExpenses.snowRemoval * expenseGrowth,
-        repairsMaintenance: baseExpenses.repairsMaintenance * expenseGrowth,
-        pestControl: baseExpenses.pestControl * expenseGrowth,
-        management: egi * (managementPct / 100),
-        legalAccounting: baseExpenses.legalAccounting * expenseGrowth,
-        advertising: baseExpenses.advertising * expenseGrowth,
-        miscellaneous: baseExpenses.miscellaneous * expenseGrowth,
-        replacementReserves: baseExpenses.replacementReserves * expenseGrowth,
-      }
-
-      const totalOpex = Object.values(yearExpenses).reduce((sum, v) => sum + v, 0)
+      const fixedExpenses = Object.values(baseExpenses).reduce((s, v) => s + v, 0) * expenseGrowth
+      const mgmt = egi * (managementPct / 100)
+      const totalOpex = fixedExpenses + mgmt
       const noi = egi - totalOpex
       const cashFlow = noi - annualDebtService
 
@@ -741,7 +835,6 @@ export function ProFormaApp() {
         grossPotentialIncome: gpi,
         vacancy,
         effectiveGrossIncome: egi,
-        ...yearExpenses,
         totalOperatingExpenses: totalOpex,
         netOperatingIncome: noi,
         debtService: annualDebtService,
@@ -761,78 +854,54 @@ export function ProFormaApp() {
     }
   }, [inputs])
 
-  // Generate deep analysis
-  const analysis = useMemo(() => generateDeepAnalysis(inputs, calc), [inputs, calc])
+  // Generate analysis
+  const analysis = useMemo(() => generateSophisticatedAnalysis(inputs, calc), [inputs, calc])
 
   // ============================================================================
   // RENDER
   // ============================================================================
 
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-900">
-      {/* FIXED HEADER */}
-      <header className="bg-[#1e3a5f] text-white px-4 py-3 sticky top-0 z-50 shadow-lg">
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      {/* HEADER */}
+      <header className="bg-slate-900 text-white px-4 py-3 sticky top-0 z-50">
         <div className="max-w-[1800px] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold">INVESTMENT PRO FORMA</h1>
-            <nav className="hidden md:flex items-center gap-1 ml-4">
-              {['Grade', 'Property', 'Units', 'Acquisition', 'Expenses', 'Projection'].map(section => (
-                <button
-                  key={section}
-                  onClick={() => scrollToSection(section.toLowerCase())}
-                  className="px-3 py-1 text-sm rounded hover:bg-white/20 transition-colors"
-                >
+            <h1 className="text-lg font-bold tracking-tight">PRO FORMA</h1>
+            <nav className="hidden md:flex items-center gap-1">
+              {['Analysis', 'Property', 'Units', 'Financing', 'Expenses', 'Projection'].map(section => (
+                <button key={section} onClick={() => scrollToSection(section.toLowerCase())} className="px-3 py-1 text-sm text-slate-400 hover:text-white rounded hover:bg-slate-800">
                   {section}
                 </button>
               ))}
             </nav>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowQuickEdit(!showQuickEdit)}
-              className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm transition-colors ${showQuickEdit ? 'bg-emerald-500' : 'bg-white/20 hover:bg-white/30'}`}
-            >
-              <Settings size={16} /> Quick Edit
+            <button onClick={() => setShowQuickEdit(!showQuickEdit)} className={`flex items-center gap-1 px-3 py-1.5 rounded text-sm ${showQuickEdit ? 'bg-emerald-500 text-white' : 'bg-slate-800 text-slate-300'}`}>
+              <Settings size={14} /> Quick Edit
             </button>
-            <button onClick={reset} className="flex items-center gap-1 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-sm">
-              <RotateCcw size={14} />
-            </button>
-            <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded text-sm">
-              <Printer size={14} />
-            </button>
-            <button className="flex items-center gap-1 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 rounded text-sm font-medium">
-              <Download size={14} /> Export
-            </button>
+            <button onClick={reset} className="p-2 bg-slate-800 hover:bg-slate-700 rounded"><RotateCcw size={14} /></button>
+            <button onClick={() => window.print()} className="p-2 bg-slate-800 hover:bg-slate-700 rounded"><Printer size={14} /></button>
+            <button className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-sm"><Download size={14} /> Export</button>
           </div>
         </div>
       </header>
 
-      {/* QUICK EDIT PANEL */}
+      {/* QUICK EDIT */}
       {showQuickEdit && (
-        <div className="bg-slate-800 text-white px-4 py-3 sticky top-[52px] z-40 shadow-lg border-b border-slate-700">
-          <div className="max-w-[1800px] mx-auto">
-            <div className="flex items-center gap-6 overflow-x-auto pb-1">
-              <QuickInput label="Purchase" value={inputs.purchasePrice} onChange={v => setNum('purchasePrice', v)} prefix="$" />
-              <QuickInput label="Down" value={inputs.downPaymentPct} onChange={v => setNum('downPaymentPct', v)} suffix="%" />
-              <QuickInput label="Rate" value={inputs.interestRate} onChange={v => setNum('interestRate', v)} suffix="%" />
-              <QuickInput label="Vacancy" value={inputs.vacancyPct} onChange={v => setNum('vacancyPct', v)} suffix="%" />
-              <QuickInput label="Rent ↑" value={inputs.annualRentIncrease} onChange={v => setNum('annualRentIncrease', v)} suffix="%" />
-              <QuickInput label="Expense ↑" value={inputs.annualExpenseIncrease} onChange={v => setNum('annualExpenseIncrease', v)} suffix="%" />
-              <QuickInput label="Exit Cap" value={inputs.exitCapRate} onChange={v => setNum('exitCapRate', v)} suffix="%" />
-              <div className="border-l border-slate-600 pl-4 flex items-center gap-4">
-                <div className="text-center">
-                  <div className="text-xs text-slate-400">Cap Rate</div>
-                  <div className="font-bold text-emerald-400">{fmtDec(calc.capRate)}%</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs text-slate-400">Cash/Cash</div>
-                  <div className={`font-bold ${calc.cashOnCash >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{fmtDec(calc.cashOnCash)}%</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xs text-slate-400">DSCR</div>
-                  <div className={`font-bold ${calc.dscr >= 1.25 ? 'text-emerald-400' : calc.dscr >= 1 ? 'text-yellow-400' : 'text-red-400'}`}>{fmtDec(calc.dscr)}</div>
-                </div>
-              </div>
+        <div className="bg-slate-800 text-white px-4 py-2 sticky top-[52px] z-40 border-b border-slate-700">
+          <div className="max-w-[1800px] mx-auto flex items-center gap-4 overflow-x-auto text-sm">
+            <QuickInput label="Price" value={inputs.purchasePrice} onChange={v => setNum('purchasePrice', v)} prefix="$" />
+            <QuickInput label="Down" value={inputs.downPaymentPct} onChange={v => setNum('downPaymentPct', v)} suffix="%" />
+            <QuickInput label="Rate" value={inputs.interestRate} onChange={v => setNum('interestRate', v)} suffix="%" />
+            <QuickInput label="Vacancy" value={inputs.vacancyPct} onChange={v => setNum('vacancyPct', v)} suffix="%" />
+            <QuickInput label="Rent↑" value={inputs.annualRentIncrease} onChange={v => setNum('annualRentIncrease', v)} suffix="%" />
+            <QuickInput label="Exp↑" value={inputs.annualExpenseIncrease} onChange={v => setNum('annualExpenseIncrease', v)} suffix="%" />
+            <QuickInput label="Exit Cap" value={inputs.exitCapRate} onChange={v => setNum('exitCapRate', v)} suffix="%" />
+            <div className="border-l border-slate-600 pl-4 flex items-center gap-4">
+              <Metric label="Cap" value={`${fmtDec(calc.capRate)}%`} />
+              <Metric label="CoC" value={`${fmtDec(calc.cashOnCash)}%`} good={calc.cashOnCash > 0} bad={calc.cashOnCash < 0} />
+              <Metric label="DSCR" value={fmtDec(calc.dscr, 2)} good={calc.dscr >= 1.25} bad={calc.dscr < 1} />
             </div>
           </div>
         </div>
@@ -840,213 +909,215 @@ export function ProFormaApp() {
 
       <main className="max-w-[1800px] mx-auto p-4 space-y-4">
         
-        {/* INVESTMENT ANALYSIS */}
-        <section ref={el => { sectionsRef.current['grade'] = el }} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-gradient-to-r from-[#1e3a5f] to-[#2d5a87] text-white px-6 py-4">
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              <TrendingUp size={20} /> Investment Analysis
-            </h2>
+        {/* ANALYSIS SECTION */}
+        <section ref={el => { sectionsRef.current['analysis'] = el }} className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Target size={20} />
+              <span className="font-semibold">Investment Analysis</span>
+              <span className="px-2 py-0.5 bg-slate-700 rounded text-xs">{analysis.dealType}</span>
+              {analysis.isCashDeal && <span className="px-2 py-0.5 bg-emerald-600 rounded text-xs">Cash Deal</span>}
+            </div>
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-lg font-bold ${
+              analysis.gradeColor === 'emerald' ? 'bg-emerald-500' :
+              analysis.gradeColor === 'blue' ? 'bg-blue-500' :
+              analysis.gradeColor === 'yellow' ? 'bg-yellow-500 text-slate-900' :
+              analysis.gradeColor === 'orange' ? 'bg-orange-500' :
+              'bg-red-500'
+            }`}>
+              {analysis.grade}
+            </div>
           </div>
           
-          <div className="p-6">
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              
-              {/* Grade Circle */}
-              <div className="lg:col-span-2 flex flex-col items-center justify-center">
-                <div className={`w-28 h-28 rounded-full flex items-center justify-center text-5xl font-black border-[6px] ${
-                  analysis.gradeColor === 'emerald' ? 'bg-emerald-100 border-emerald-500 text-emerald-700' :
-                  analysis.gradeColor === 'blue' ? 'bg-blue-100 border-blue-500 text-blue-700' :
-                  analysis.gradeColor === 'yellow' ? 'bg-yellow-100 border-yellow-500 text-yellow-700' :
-                  analysis.gradeColor === 'orange' ? 'bg-orange-100 border-orange-500 text-orange-700' :
-                  'bg-red-100 border-red-500 text-red-700'
+          <div className="p-4">
+            {/* KPIs Row */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+              {analysis.kpis.map((kpi, i) => (
+                <div key={i} className={`p-3 rounded border ${
+                  kpi.status === 'critical' ? 'bg-red-50 border-red-200' :
+                  kpi.status === 'warning' ? 'bg-amber-50 border-amber-200' :
+                  kpi.status === 'good' ? 'bg-emerald-50 border-emerald-200' :
+                  'bg-slate-50 border-slate-200'
                 }`}>
-                  {analysis.overallGrade}
+                  <div className="text-xs text-slate-500">{kpi.label}</div>
+                  <div className="text-lg font-bold">{kpi.value}</div>
+                  {kpi.delta && <div className="text-xs text-slate-400">{kpi.delta}</div>}
                 </div>
-                <div className="mt-2 text-sm text-gray-500">Score: {analysis.overallScore}/100</div>
-              </div>
+              ))}
+            </div>
 
-              {/* Strategy & Quick Fixes */}
-              <div className="lg:col-span-4">
-                <div className="bg-gray-50 rounded-lg p-4 h-full">
-                  <div className={`inline-block px-3 py-1 rounded-full text-sm font-semibold mb-2 ${
-                    analysis.strategy.includes('Turnaround') ? 'bg-red-100 text-red-800' :
-                    analysis.strategy.includes('Value-Add') ? 'bg-amber-100 text-amber-800' :
-                    analysis.strategy.includes('Cash Flow') ? 'bg-emerald-100 text-emerald-800' :
-                    analysis.strategy.includes('House Hack') ? 'bg-purple-100 text-purple-800' :
-                    'bg-blue-100 text-blue-800'
-                  }`}>
-                    {analysis.strategy}
+            {/* Breakeven & Sensitivity */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+              {/* Breakeven */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <div className="flex items-center gap-2 font-semibold text-slate-700 mb-3">
+                  <Zap size={16} /> Breakeven Analysis
+                </div>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Occupancy Breakeven</span>
+                    <span className="font-mono font-semibold">{fmtDec(analysis.breakeven.occupancyBreakeven, 1)}%</span>
                   </div>
-                  <p className="text-sm text-gray-700">{analysis.strategyDescription}</p>
-                  
-                  {analysis.quickFixes.length > 0 && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <div className="text-xs font-semibold text-gray-500 mb-2">QUICK ADJUSTMENTS</div>
-                      <div className="space-y-2">
-                        {analysis.quickFixes.map((fix, i) => (
-                          <button
-                            key={i}
-                            onClick={() => set(fix.field, fix.suggestedValue as never)}
-                            className="w-full text-left px-3 py-2 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition-colors"
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-blue-800">{fix.label}</span>
-                              <span className="text-xs text-blue-600">{fix.currentValue} → {fix.suggestedValue}</span>
-                            </div>
-                            <div className="text-xs text-blue-600">{fix.impact}</div>
-                          </button>
-                        ))}
-                      </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Rent Breakeven</span>
+                    <span className="font-mono font-semibold">${fmt(analysis.breakeven.rentBreakeven)}/unit</span>
+                  </div>
+                  {analysis.breakeven.rateBreakeven && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-600">Rate Breakeven</span>
+                      <span className="font-mono font-semibold">{fmtDec(analysis.breakeven.rateBreakeven)}%</span>
+                    </div>
+                  )}
+                  {analysis.breakeven.yearsToPositiveCashFlow && (
+                    <div className="flex justify-between text-amber-700">
+                      <span>Years to Positive CF</span>
+                      <span className="font-mono font-semibold">Year {analysis.breakeven.yearsToPositiveCashFlow}</span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Key Metrics */}
-              <div className="lg:col-span-2">
-                <div className="space-y-2">
-                  <MetricPill label="Cap Rate" value={`${fmtDec(calc.capRate)}%`} good={calc.capRate >= 6} bad={calc.capRate < 4} />
-                  <MetricPill label="Cash-on-Cash" value={`${fmtDec(calc.cashOnCash)}%`} good={calc.cashOnCash >= 8} bad={calc.cashOnCash < 0} />
-                  <MetricPill label="DSCR" value={fmtDec(calc.dscr)} good={calc.dscr >= 1.25} bad={calc.dscr < 1} />
-                  <MetricPill label="Expense Ratio" value={`${fmtDec(calc.expenseRatio, 0)}%`} good={calc.expenseRatio <= 45} bad={calc.expenseRatio > 55} />
-                  <MetricPill label="LTV" value={`${fmtDec(calc.ltv, 0)}%`} good={calc.ltv <= 70} bad={calc.ltv > 80} />
+              {/* Rate Sensitivity */}
+              {!analysis.isCashDeal && (
+                <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                  <div className="flex items-center gap-2 font-semibold text-slate-700 mb-3">
+                    <Percent size={16} /> Rate Sensitivity
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    {analysis.sensitivity.rateImpact.map((r, i) => (
+                      <div key={i} className={`flex justify-between py-1 px-2 rounded ${Math.abs(r.rate - inputs.interestRate) < 0.1 ? 'bg-slate-200 font-semibold' : ''}`}>
+                        <span>{fmtDec(r.rate, 1)}%</span>
+                        <span className={r.cashFlow >= 0 ? 'text-emerald-700' : 'text-red-600'}>${fmt(r.cashFlow)}</span>
+                        <span className={r.dscr >= 1.25 ? 'text-emerald-700' : r.dscr >= 1 ? 'text-amber-600' : 'text-red-600'}>{fmtDec(r.dscr, 2)}x</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Vacancy Sensitivity */}
+              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                <div className="flex items-center gap-2 font-semibold text-slate-700 mb-3">
+                  <TrendingUp size={16} /> Vacancy Sensitivity
+                </div>
+                <div className="space-y-1 text-xs">
+                  {analysis.sensitivity.vacancyImpact.map((v, i) => (
+                    <div key={i} className={`flex justify-between py-1 px-2 rounded ${Math.abs(v.vacancy - inputs.vacancyPct) < 0.1 ? 'bg-slate-200 font-semibold' : ''}`}>
+                      <span>{fmtDec(v.vacancy, 0)}% vacancy</span>
+                      <span>NOI: ${fmt(v.noi)}</span>
+                      <span className={v.cashFlow >= 0 ? 'text-emerald-700' : 'text-red-600'}>CF: ${fmt(v.cashFlow)}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-
-              {/* Insights */}
-              <div className="lg:col-span-4 max-h-[300px] overflow-y-auto space-y-2 pr-2">
-                {analysis.insights.slice(0, 6).map((insight, i) => (
-                  <InsightCard key={i} insight={insight} />
-                ))}
-              </div>
             </div>
+
+            {/* Insights */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {analysis.insights.slice(0, 9).map((insight, i) => (
+                <InsightCard key={i} insight={insight} />
+              ))}
+            </div>
+
+            {/* Expense Benchmarking */}
+            {analysis.expenseAnalysis.some(e => e.status !== 'normal') && (
+              <div className="mt-4 pt-4 border-t border-slate-200">
+                <div className="text-sm font-semibold text-slate-700 mb-2">Expense Benchmarking (per unit)</div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                  {analysis.expenseAnalysis.map((exp, i) => (
+                    <div key={i} className={`p-2 rounded text-xs ${
+                      exp.status === 'outlier' ? 'bg-red-50 border border-red-200' :
+                      exp.status === 'high' ? 'bg-amber-50 border border-amber-200' :
+                      exp.status === 'low' ? 'bg-blue-50 border border-blue-200' :
+                      'bg-slate-50'
+                    }`}>
+                      <div className="font-medium text-slate-700">{exp.category}</div>
+                      <div className="font-bold">${fmt(exp.perUnit)}/unit</div>
+                      <div className="text-slate-400">Benchmark: ${fmt(exp.benchmark.low)}-${fmt(exp.benchmark.high)}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
-        {/* PROPERTY & UNITS - Side by Side */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          {/* Property Info */}
-          <section ref={el => { sectionsRef.current['property'] = el }} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <SectionHeader title="PROPERTY IDENTIFICATION" />
+        {/* PROPERTY & FINANCING */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <section ref={el => { sectionsRef.current['property'] = el }} className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+            <SectionHeader title="Property" />
             <div className="p-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Property Name</label>
-                  <input
-                    type="text"
-                    value={inputs.propertyName}
-                    onChange={e => set('propertyName', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg font-semibold focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Address</label>
-                  <input
-                    type="text"
-                    value={inputs.propertyAddress}
-                    onChange={e => set('propertyAddress', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-4 gap-2 pt-2 border-t border-gray-200">
-                <StatBox label="Units" value={calc.totalUnits.toString()} />
-                <StatBox label="Total SF" value={fmt(calc.totalSqft)} />
+              <input type="text" value={inputs.propertyName} onChange={e => set('propertyName', e.target.value)} placeholder="Property Name" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-lg font-semibold" />
+              <input type="text" value={inputs.propertyAddress} onChange={e => set('propertyAddress', e.target.value)} placeholder="Address" className="w-full px-3 py-2 border border-slate-300 rounded-lg" />
+              <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-200">
+                <StatBox label="Units" value={String(calc.totalUnits)} />
+                <StatBox label="SF" value={fmt(calc.totalSqft)} />
                 <StatBox label="$/Unit" value={`$${fmt(calc.pricePerUnit)}`} />
-                <StatBox label="$/SF" value={`$${fmtDec(calc.pricePerSqft)}`} />
+                <StatBox label="$/SF" value={`$${fmtDec(calc.pricePerSqft, 0)}`} />
               </div>
             </div>
           </section>
 
-          {/* Acquisition & Financing */}
-          <section ref={el => { sectionsRef.current['acquisition'] = el }} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <SectionHeader title="ACQUISITION & FINANCING" />
+          <section ref={el => { sectionsRef.current['financing'] = el }} className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+            <SectionHeader title="Acquisition & Financing" />
             <div className="p-4">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-3 mb-3">
                 <CompactInput label="Purchase Price" value={inputs.purchasePrice} onChange={v => setNum('purchasePrice', v)} prefix="$" />
                 <CompactInput label="Closing Costs" value={inputs.closingCosts} onChange={v => setNum('closingCosts', v)} prefix="$" />
                 <CompactInput label="Repairs" value={inputs.immediateRepairs} onChange={v => setNum('immediateRepairs', v)} prefix="$" />
                 <CompactInput label="Down Payment" value={inputs.downPaymentPct} onChange={v => setNum('downPaymentPct', v)} suffix="%" />
                 <CompactInput label="Interest Rate" value={inputs.interestRate} onChange={v => setNum('interestRate', v)} suffix="%" />
-                <CompactInput label="Loan Term" value={inputs.loanTermYears} onChange={v => setNum('loanTermYears', v)} suffix="yrs" />
+                <CompactInput label="Term (Years)" value={inputs.loanTermYears} onChange={v => setNum('loanTermYears', v)} />
               </div>
-              
-              <div className="grid grid-cols-4 gap-2 mt-3 pt-3 border-t border-gray-200">
+              <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-200 text-sm">
                 <StatBox label="Loan" value={`$${fmt(calc.loanAmount)}`} />
-                <StatBox label="Monthly P&I" value={`$${fmt(calc.monthlyMortgage)}`} />
-                <StatBox label="Cash Needed" value={`$${fmt(calc.totalCashRequired)}`} highlight />
+                <StatBox label="P&I/mo" value={`$${fmt(calc.monthlyMortgage)}`} />
+                <StatBox label="Cash In" value={`$${fmt(calc.totalCashRequired)}`} />
                 <StatBox label="LTV" value={`${fmtDec(calc.ltv, 0)}%`} />
               </div>
             </div>
           </section>
         </div>
 
-        {/* UNITS TABLE */}
-        <section ref={el => { sectionsRef.current['units'] = el }} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-[#1e3a5f] text-white px-4 py-2 flex items-center justify-between">
-            <span className="font-semibold">RENT ROLL ({calc.totalUnits} Units)</span>
-            <button onClick={addUnit} className="flex items-center gap-1 px-2 py-1 bg-white/20 hover:bg-white/30 rounded text-sm">
-              <Plus size={14} /> Add
-            </button>
+        {/* UNITS */}
+        <section ref={el => { sectionsRef.current['units'] = el }} className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between">
+            <span className="font-semibold">Rent Roll</span>
+            <button onClick={addUnit} className="flex items-center gap-1 px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm"><Plus size={14} /> Add</button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b border-gray-200">
+              <thead className="bg-slate-50">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium text-gray-600">Unit</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-600">Bed</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-600">Bath</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">SF</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">Rent</th>
-                  <th className="px-3 py-2 text-right font-medium text-gray-600">$/SF</th>
+                  <th className="px-3 py-2 text-left font-medium text-slate-600">Unit</th>
+                  <th className="px-3 py-2 text-center font-medium text-slate-600">Bed</th>
+                  <th className="px-3 py-2 text-center font-medium text-slate-600">Bath</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-600">SF</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-600">Rent</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-600">$/SF</th>
                   <th className="px-3 py-2 w-8"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-slate-100">
                 {inputs.units.map((unit, idx) => (
-                  <tr key={unit.id} className={idx % 2 ? 'bg-gray-50' : ''}>
-                    <td className="px-3 py-1">
-                      <input type="text" value={unit.unitNumber} onChange={e => updateUnit(unit.id, 'unitNumber', e.target.value)}
-                        className="w-20 px-2 py-1 border border-gray-200 rounded text-sm" />
-                    </td>
-                    <td className="px-3 py-1 text-center">
-                      <input type="number" value={unit.bedrooms} onChange={e => updateUnit(unit.id, 'bedrooms', e.target.value)}
-                        className="w-12 px-1 py-1 border border-gray-200 rounded text-center text-sm" />
-                    </td>
-                    <td className="px-3 py-1 text-center">
-                      <input type="number" value={unit.bathrooms} onChange={e => updateUnit(unit.id, 'bathrooms', e.target.value)}
-                        className="w-12 px-1 py-1 border border-gray-200 rounded text-center text-sm" />
-                    </td>
-                    <td className="px-3 py-1 text-right">
-                      <input type="number" value={unit.sqft} onChange={e => updateUnit(unit.id, 'sqft', e.target.value)}
-                        className="w-16 px-1 py-1 border border-gray-200 rounded text-right text-sm" />
-                    </td>
-                    <td className="px-3 py-1 text-right">
-                      <div className="flex items-center justify-end">
-                        <span className="text-gray-400 mr-1">$</span>
-                        <input type="number" value={unit.rent} onChange={e => updateUnit(unit.id, 'rent', e.target.value)}
-                          className="w-20 px-1 py-1 border border-gray-200 rounded text-right text-sm" />
-                      </div>
-                    </td>
-                    <td className="px-3 py-1 text-right text-gray-500">${fmtDec(unit.rent / unit.sqft)}</td>
-                    <td className="px-3 py-1">
-                      {inputs.units.length > 1 && (
-                        <button onClick={() => removeUnit(unit.id)} className="text-gray-400 hover:text-red-500">
-                          <Trash2 size={14} />
-                        </button>
-                      )}
-                    </td>
+                  <tr key={unit.id} className={idx % 2 ? 'bg-slate-50' : ''}>
+                    <td className="px-3 py-1"><input type="text" value={unit.unitNumber} onChange={e => updateUnit(unit.id, 'unitNumber', e.target.value)} className="w-20 px-2 py-1 border border-slate-200 rounded" /></td>
+                    <td className="px-3 py-1 text-center"><input type="number" value={unit.bedrooms} onChange={e => updateUnit(unit.id, 'bedrooms', e.target.value)} className="w-12 px-1 py-1 border border-slate-200 rounded text-center" /></td>
+                    <td className="px-3 py-1 text-center"><input type="number" value={unit.bathrooms} onChange={e => updateUnit(unit.id, 'bathrooms', e.target.value)} className="w-12 px-1 py-1 border border-slate-200 rounded text-center" /></td>
+                    <td className="px-3 py-1 text-right"><input type="number" value={unit.sqft} onChange={e => updateUnit(unit.id, 'sqft', e.target.value)} className="w-16 px-1 py-1 border border-slate-200 rounded text-right" /></td>
+                    <td className="px-3 py-1 text-right"><input type="number" value={unit.rent} onChange={e => updateUnit(unit.id, 'rent', e.target.value)} className="w-20 px-1 py-1 border border-slate-200 rounded text-right" /></td>
+                    <td className="px-3 py-1 text-right text-slate-500">${fmtDec(unit.rent / unit.sqft)}</td>
+                    <td className="px-3 py-1">{inputs.units.length > 1 && <button onClick={() => removeUnit(unit.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>}</td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-green-50 font-semibold border-t-2 border-green-200">
+              <tfoot className="bg-emerald-50 font-semibold">
                 <tr>
-                  <td className="px-3 py-2">TOTAL</td>
-                  <td className="px-3 py-2 text-center">{calc.totalUnits}</td>
+                  <td className="px-3 py-2">Total ({calc.totalUnits})</td>
+                  <td className="px-3 py-2"></td>
                   <td className="px-3 py-2"></td>
                   <td className="px-3 py-2 text-right">{fmt(calc.totalSqft)}</td>
-                  <td className="px-3 py-2 text-right text-green-700">${fmt(calc.monthlyRent)}</td>
+                  <td className="px-3 py-2 text-right text-emerald-700">${fmt(calc.monthlyRent)}</td>
                   <td className="px-3 py-2 text-right">${fmtDec(calc.monthlyRent / calc.totalSqft)}</td>
                   <td></td>
                 </tr>
@@ -1055,158 +1126,91 @@ export function ProFormaApp() {
           </div>
         </section>
 
-        {/* INCOME & EXPENSES - Side by Side Compact */}
-        <section ref={el => { sectionsRef.current['expenses'] = el }} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <SectionHeader title="INCOME & OPERATING EXPENSES" />
+        {/* EXPENSES */}
+        <section ref={el => { sectionsRef.current['expenses'] = el }} className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+          <SectionHeader title="Operating Expenses" />
           <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Income */}
             <div>
-              <div className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                <DollarSign size={16} className="text-green-600" /> ANNUAL INCOME
-              </div>
+              <div className="text-sm font-semibold text-slate-700 mb-2"><DollarSign size={14} className="inline mr-1" />Income</div>
               <div className="space-y-1">
-                <div className="flex justify-between py-1.5 px-2 bg-gray-50 rounded text-sm">
-                  <span>Scheduled Rent (12 × ${fmt(calc.monthlyRent)})</span>
-                  <span className="font-semibold">${fmt(calc.annualRent)}</span>
-                </div>
+                <div className="flex justify-between py-1.5 px-2 bg-slate-50 rounded text-sm"><span>Annual Rent</span><span className="font-semibold">${fmt(calc.annualRent)}</span></div>
                 <InlineInput label="Laundry/mo" value={inputs.laundryIncome} onChange={v => setNum('laundryIncome', v)} prefix="$" />
-                <InlineInput label="Parking/mo" value={inputs.parkingIncome} onChange={v => setNum('parkingIncome', v)} prefix="$" />
                 <InlineInput label="Other/mo" value={inputs.otherIncome} onChange={v => setNum('otherIncome', v)} prefix="$" />
-                <InlineInput label="Vacancy" value={inputs.vacancyPct} onChange={v => setNum('vacancyPct', v)} suffix="%" highlight />
-                <div className="flex justify-between py-2 px-3 bg-green-100 rounded font-semibold text-green-800 border border-green-200">
-                  <span>EFFECTIVE GROSS INCOME</span>
-                  <span>${fmt(calc.year1EGI)}</span>
-                </div>
+                <InlineInput label="Vacancy" value={inputs.vacancyPct} onChange={v => setNum('vacancyPct', v)} suffix="%" />
+                <div className="flex justify-between py-2 px-3 bg-emerald-100 rounded font-semibold text-emerald-800 border border-emerald-200"><span>EGI</span><span>${fmt(calc.year1EGI)}</span></div>
               </div>
             </div>
-
-            {/* Expenses */}
             <div>
-              <div className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                <Percent size={16} className="text-amber-600" /> OPERATING EXPENSES
-              </div>
+              <div className="text-sm font-semibold text-slate-700 mb-2"><Percent size={14} className="inline mr-1" />Expenses</div>
               <div className="grid grid-cols-2 gap-1">
-                <InlineInput label="Property Taxes" value={inputs.realEstateTaxes} onChange={v => setNum('realEstateTaxes', v)} prefix="$" compact />
+                <InlineInput label="Taxes" value={inputs.realEstateTaxes} onChange={v => setNum('realEstateTaxes', v)} prefix="$" compact />
                 <InlineInput label="Insurance" value={inputs.insurance} onChange={v => setNum('insurance', v)} prefix="$" compact />
                 <InlineInput label="Water" value={inputs.water} onChange={v => setNum('water', v)} prefix="$" compact />
                 <InlineInput label="Sewer" value={inputs.sewer} onChange={v => setNum('sewer', v)} prefix="$" compact />
                 <InlineInput label="Gas" value={inputs.gas} onChange={v => setNum('gas', v)} prefix="$" compact />
                 <InlineInput label="Electric" value={inputs.electric} onChange={v => setNum('electric', v)} prefix="$" compact />
                 <InlineInput label="Trash" value={inputs.trash} onChange={v => setNum('trash', v)} prefix="$" compact />
-                <InlineInput label="Landscaping" value={inputs.landscaping} onChange={v => setNum('landscaping', v)} prefix="$" compact />
+                <InlineInput label="Landscape" value={inputs.landscaping} onChange={v => setNum('landscaping', v)} prefix="$" compact />
                 <InlineInput label="Repairs" value={inputs.repairsMaintenance} onChange={v => setNum('repairsMaintenance', v)} prefix="$" compact />
-                <InlineInput label="Management" value={inputs.managementPct} onChange={v => setNum('managementPct', v)} suffix="%" compact />
-                <InlineInput label="Legal/Acct" value={inputs.legalAccounting} onChange={v => setNum('legalAccounting', v)} prefix="$" compact />
+                <InlineInput label="Mgmt %" value={inputs.managementPct} onChange={v => setNum('managementPct', v)} suffix="%" compact />
                 <InlineInput label="Reserves" value={inputs.replacementReserves} onChange={v => setNum('replacementReserves', v)} prefix="$" compact />
+                <InlineInput label="Other" value={inputs.miscellaneous} onChange={v => setNum('miscellaneous', v)} prefix="$" compact />
               </div>
-              <div className="flex justify-between py-2 px-3 bg-yellow-100 rounded font-semibold text-yellow-800 border border-yellow-200 mt-2">
-                <span>TOTAL EXPENSES</span>
-                <span>${fmt(calc.year1TotalExpenses)}</span>
-              </div>
+              <div className="flex justify-between py-2 px-3 bg-amber-100 rounded font-semibold text-amber-800 border border-amber-200 mt-2"><span>Total OpEx</span><span>${fmt(calc.year1TotalExpenses)}</span></div>
             </div>
           </div>
-
-          {/* NOI & Cash Flow Summary */}
-          <div className="px-4 pb-4">
-            <div className="grid grid-cols-4 gap-3 pt-3 border-t border-gray-200">
-              <div className="bg-green-50 rounded-lg p-3 text-center border border-green-200">
-                <div className="text-xs text-green-600 font-medium">Year 1 NOI</div>
-                <div className="text-xl font-bold text-green-700">${fmt(calc.year1NOI)}</div>
-              </div>
-              <div className="bg-blue-50 rounded-lg p-3 text-center border border-blue-200">
-                <div className="text-xs text-blue-600 font-medium">Debt Service</div>
-                <div className="text-xl font-bold text-blue-700">${fmt(calc.annualDebtService)}</div>
-              </div>
-              <div className={`rounded-lg p-3 text-center border ${calc.year1CashFlow >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-                <div className={`text-xs font-medium ${calc.year1CashFlow >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>Year 1 Cash Flow</div>
-                <div className={`text-xl font-bold ${calc.year1CashFlow >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>${fmt(calc.year1CashFlow)}</div>
-              </div>
-              <div className={`rounded-lg p-3 text-center border ${calc.cashOnCash >= 8 ? 'bg-emerald-50 border-emerald-200' : calc.cashOnCash >= 0 ? 'bg-gray-50 border-gray-200' : 'bg-red-50 border-red-200'}`}>
-                <div className="text-xs text-gray-600 font-medium">Cash-on-Cash</div>
-                <div className={`text-xl font-bold ${calc.cashOnCash >= 8 ? 'text-emerald-700' : calc.cashOnCash >= 0 ? 'text-gray-700' : 'text-red-700'}`}>{fmtDec(calc.cashOnCash)}%</div>
-              </div>
-            </div>
+          <div className="px-4 pb-4 grid grid-cols-4 gap-3 border-t border-slate-200 pt-4">
+            <ResultBox label="NOI" value={`$${fmt(calc.year1NOI)}`} highlight={calc.year1NOI > 0} />
+            <ResultBox label="Debt Service" value={`$${fmt(calc.annualDebtService)}`} />
+            <ResultBox label="Cash Flow" value={`$${fmt(calc.year1CashFlow)}`} highlight={calc.year1CashFlow > 0} negative={calc.year1CashFlow < 0} />
+            <ResultBox label="Cash-on-Cash" value={`${fmtDec(calc.cashOnCash)}%`} highlight={calc.cashOnCash >= 8} negative={calc.cashOnCash < 0} />
           </div>
         </section>
 
-        {/* PROJECTION TABLE WITH INLINE EDITING */}
-        <section ref={el => { sectionsRef.current['projection'] = el }} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div className="bg-[#1e3a5f] text-white px-4 py-2 flex items-center justify-between">
-            <span className="font-semibold">{inputs.projectionYears + 1}-YEAR PRO FORMA</span>
-            <div className="flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-blue-200">Rent Growth:</span>
-                <input
-                  type="number"
-                  value={inputs.annualRentIncrease}
-                  onChange={e => setNum('annualRentIncrease', e.target.value)}
-                  className="w-14 px-2 py-0.5 bg-white/20 rounded text-center text-white"
-                  step="0.5"
-                />
-                <span>%</span>
+        {/* PROJECTION */}
+        <section ref={el => { sectionsRef.current['projection'] = el }} className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+          <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between">
+            <span className="font-semibold">{inputs.projectionYears + 1}-Year Pro Forma</span>
+            <div className="flex items-center gap-3 text-sm">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400">Rent↑</span>
+                <input type="number" value={inputs.annualRentIncrease} onChange={e => setNum('annualRentIncrease', e.target.value)} className="w-12 px-1 py-0.5 bg-slate-700 rounded text-center" step="0.5" />%
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-blue-200">Expense Growth:</span>
-                <input
-                  type="number"
-                  value={inputs.annualExpenseIncrease}
-                  onChange={e => setNum('annualExpenseIncrease', e.target.value)}
-                  className="w-14 px-2 py-0.5 bg-white/20 rounded text-center text-white"
-                  step="0.5"
-                />
-                <span>%</span>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400">Exp↑</span>
+                <input type="number" value={inputs.annualExpenseIncrease} onChange={e => setNum('annualExpenseIncrease', e.target.value)} className="w-12 px-1 py-0.5 bg-slate-700 rounded text-center" step="0.5" />%
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-blue-200">Years:</span>
-                <input
-                  type="number"
-                  value={inputs.projectionYears}
-                  onChange={e => setNum('projectionYears', e.target.value)}
-                  className="w-12 px-2 py-0.5 bg-white/20 rounded text-center text-white"
-                />
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400">Years</span>
+                <input type="number" value={inputs.projectionYears} onChange={e => setNum('projectionYears', e.target.value)} className="w-10 px-1 py-0.5 bg-slate-700 rounded text-center" />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400">Exit Cap</span>
+                <input type="number" value={inputs.exitCapRate} onChange={e => setNum('exitCapRate', e.target.value)} className="w-12 px-1 py-0.5 bg-slate-700 rounded text-center" step="0.25" />%
               </div>
             </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-100 border-b border-gray-300">
-                  <th className="px-3 py-2 text-left font-semibold text-gray-700 sticky left-0 bg-gray-100 min-w-[180px]">Line Item</th>
-                  {calc.years.map(y => (
-                    <th key={y.year} className="px-2 py-2 text-right font-semibold text-gray-700 min-w-[85px]">{y.year}</th>
-                  ))}
+              <thead className="bg-slate-100">
+                <tr>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700 sticky left-0 bg-slate-100 min-w-[160px]">Line Item</th>
+                  {calc.years.map(y => <th key={y.year} className="px-2 py-2 text-right font-semibold text-slate-700 min-w-[80px]">{y.year}</th>)}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
-                <TableSection label="INCOME" />
+              <tbody className="divide-y divide-slate-100">
                 <DataRow label="Gross Rent" values={calc.years.map(y => y.scheduledRent)} />
-                <DataRow label="Other Income" values={calc.years.map(y => y.otherIncome)} />
                 <DataRow label="Vacancy" values={calc.years.map(y => -y.vacancy)} negative />
-                <DataRow label="Effective Gross Income" values={calc.years.map(y => y.effectiveGrossIncome)} bold className="bg-green-50" />
-
-                <TableSection label="OPERATING EXPENSES" />
-                <DataRow label="Property Taxes" values={calc.years.map(y => y.realEstateTaxes)} />
-                <DataRow label="Insurance" values={calc.years.map(y => y.insurance)} />
-                <DataRow label="Utilities" values={calc.years.map(y => y.utilities)} />
-                <DataRow label="Repairs & Maintenance" values={calc.years.map(y => y.repairsMaintenance)} />
-                <DataRow label="Management" values={calc.years.map(y => y.management)} />
-                <DataRow label="Other Operating" values={calc.years.map(y => y.trash + y.landscaping + y.legalAccounting + y.advertising + y.miscellaneous + y.replacementReserves)} />
-                <DataRow label="Total Expenses" values={calc.years.map(y => y.totalOperatingExpenses)} bold className="bg-yellow-50" />
-
-                <TableSection label="NET INCOME" />
-                <DataRow label="NOI" values={calc.years.map(y => y.netOperatingIncome)} bold className="bg-green-100 text-green-800" />
+                <DataRow label="EGI" values={calc.years.map(y => y.effectiveGrossIncome)} bold className="bg-emerald-50" />
+                <DataRow label="Operating Expenses" values={calc.years.map(y => -y.totalOperatingExpenses)} negative />
+                <DataRow label="NOI" values={calc.years.map(y => y.netOperatingIncome)} bold className="bg-emerald-100" />
                 <DataRow label="Debt Service" values={calc.years.map(y => -y.debtService)} negative />
-                <DataRow label="Cash Flow" values={calc.years.map(y => y.cashFlowBeforeTax)} bold className="bg-blue-100 text-blue-800" />
-                
-                <tr className="bg-gray-200 border-t-2 border-gray-300">
-                  <td className="px-3 py-2 font-bold sticky left-0 bg-gray-200">Cash-on-Cash</td>
+                <DataRow label="Cash Flow" values={calc.years.map(y => y.cashFlowBeforeTax)} bold className="bg-blue-100" />
+                <tr className="bg-slate-200">
+                  <td className="px-3 py-2 font-bold sticky left-0 bg-slate-200">Cash-on-Cash</td>
                   {calc.years.map(y => {
                     const coc = calc.totalCashRequired > 0 ? (y.cashFlowBeforeTax / calc.totalCashRequired) * 100 : 0
-                    return (
-                      <td key={y.year} className={`px-2 py-2 text-right font-bold ${coc >= 8 ? 'text-green-700' : coc >= 0 ? '' : 'text-red-600'}`}>
-                        {fmtDec(coc)}%
-                      </td>
-                    )
+                    return <td key={y.year} className={`px-2 py-2 text-right font-bold ${coc >= 8 ? 'text-emerald-700' : coc >= 0 ? '' : 'text-red-600'}`}>{fmtDec(coc)}%</td>
                   })}
                 </tr>
               </tbody>
@@ -1214,42 +1218,40 @@ export function ProFormaApp() {
           </div>
         </section>
 
-        <footer className="text-center text-gray-400 text-sm py-4">
-          Investment Pro Forma Tool • Data saved locally
-        </footer>
+        <footer className="text-center text-slate-400 text-sm py-4">Pro Forma Analysis Tool</footer>
       </main>
 
-      {/* SCROLL TO TOP */}
-      <button
-        onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-        className="fixed bottom-6 right-6 w-12 h-12 bg-[#1e3a5f] text-white rounded-full shadow-lg flex items-center justify-center hover:bg-[#2d5a87] transition-colors"
-      >
-        <ChevronUp size={24} />
+      <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="fixed bottom-4 right-4 w-10 h-10 bg-slate-900 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-slate-700">
+        <ChevronUp size={20} />
       </button>
     </div>
   )
 }
 
 // ============================================================================
-// SUB-COMPONENTS
+// COMPONENTS
 // ============================================================================
 
 function SectionHeader({ title }: { title: string }) {
-  return <div className="bg-[#1e3a5f] text-white px-4 py-2 font-semibold">{title}</div>
+  return <div className="bg-slate-900 text-white px-4 py-2 font-semibold">{title}</div>
 }
 
 function QuickInput({ label, value, onChange, prefix, suffix }: { label: string; value: number; onChange: (v: string) => void; prefix?: string; suffix?: string }) {
   return (
-    <div className="flex items-center gap-1.5 whitespace-nowrap">
+    <div className="flex items-center gap-1 whitespace-nowrap">
       <span className="text-slate-400 text-xs">{label}</span>
-      {prefix && <span className="text-slate-500 text-sm">{prefix}</span>}
-      <input
-        type="number"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-sm text-right focus:ring-1 focus:ring-emerald-400"
-      />
-      {suffix && <span className="text-slate-500 text-sm">{suffix}</span>}
+      {prefix && <span className="text-slate-500">{prefix}</span>}
+      <input type="number" value={value} onChange={e => onChange(e.target.value)} className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-right text-sm" />
+      {suffix && <span className="text-slate-500">{suffix}</span>}
+    </div>
+  )
+}
+
+function Metric({ label, value, good, bad }: { label: string; value: string; good?: boolean; bad?: boolean }) {
+  return (
+    <div className="text-center">
+      <div className="text-xs text-slate-400">{label}</div>
+      <div className={`font-bold ${bad ? 'text-red-400' : good ? 'text-emerald-400' : 'text-white'}`}>{value}</div>
     </div>
   )
 }
@@ -1257,91 +1259,85 @@ function QuickInput({ label, value, onChange, prefix, suffix }: { label: string;
 function CompactInput({ label, value, onChange, prefix, suffix }: { label: string; value: number; onChange: (v: string) => void; prefix?: string; suffix?: string }) {
   return (
     <div>
-      <label className="block text-xs text-gray-500 mb-0.5">{label}</label>
-      <div className="flex items-center border border-gray-300 rounded bg-white focus-within:ring-1 focus-within:ring-blue-500">
-        {prefix && <span className="pl-2 text-gray-400 text-sm">{prefix}</span>}
-        <input type="number" value={value} onChange={e => onChange(e.target.value)} className="flex-1 px-2 py-1.5 text-right text-sm focus:outline-none bg-transparent" />
-        {suffix && <span className="pr-2 text-gray-400 text-xs">{suffix}</span>}
+      <label className="block text-xs text-slate-500 mb-0.5">{label}</label>
+      <div className="flex items-center border border-slate-300 rounded bg-white">
+        {prefix && <span className="pl-2 text-slate-400 text-sm">{prefix}</span>}
+        <input type="number" value={value} onChange={e => onChange(e.target.value)} className="flex-1 px-2 py-1.5 text-right text-sm focus:outline-none" />
+        {suffix && <span className="pr-2 text-slate-400 text-xs">{suffix}</span>}
       </div>
     </div>
   )
 }
 
-function InlineInput({ label, value, onChange, prefix, suffix, compact, highlight }: { label: string; value: number; onChange: (v: string) => void; prefix?: string; suffix?: string; compact?: boolean; highlight?: boolean }) {
+function InlineInput({ label, value, onChange, prefix, suffix, compact }: { label: string; value: number; onChange: (v: string) => void; prefix?: string; suffix?: string; compact?: boolean }) {
   return (
-    <div className={`flex items-center justify-between py-1 px-2 rounded border ${highlight ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100 hover:border-gray-300'}`}>
-      <span className={`text-gray-600 ${compact ? 'text-xs' : 'text-sm'}`}>{label}</span>
+    <div className="flex items-center justify-between py-1 px-2 bg-white rounded border border-slate-100 hover:border-slate-300">
+      <span className={`text-slate-600 ${compact ? 'text-xs' : 'text-sm'}`}>{label}</span>
       <div className="flex items-center">
-        {prefix && <span className="text-gray-400 text-xs mr-1">{prefix}</span>}
-        <input type="number" value={value} onChange={e => onChange(e.target.value)} className={`${compact ? 'w-16' : 'w-20'} px-1 py-0.5 border border-gray-200 rounded text-right text-sm focus:ring-1 focus:ring-blue-500`} />
-        {suffix && <span className="text-gray-400 text-xs ml-1">{suffix}</span>}
+        {prefix && <span className="text-slate-400 text-xs mr-1">{prefix}</span>}
+        <input type="number" value={value} onChange={e => onChange(e.target.value)} className={`${compact ? 'w-16' : 'w-20'} px-1 py-0.5 border border-slate-200 rounded text-right text-sm`} />
+        {suffix && <span className="text-slate-400 text-xs ml-1">{suffix}</span>}
       </div>
     </div>
   )
 }
 
-function StatBox({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function StatBox({ label, value }: { label: string; value: string }) {
   return (
-    <div className={`text-center p-2 rounded ${highlight ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={`font-semibold ${highlight ? 'text-blue-700' : ''}`}>{value}</div>
+    <div className="text-center p-2 bg-slate-50 rounded">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className="font-semibold">{value}</div>
     </div>
   )
 }
 
-function MetricPill({ label, value, good, bad }: { label: string; value: string; good?: boolean; bad?: boolean }) {
+function ResultBox({ label, value, highlight, negative }: { label: string; value: string; highlight?: boolean; negative?: boolean }) {
   return (
-    <div className={`flex items-center justify-between px-3 py-2 rounded-lg border ${bad ? 'bg-red-50 border-red-200' : good ? 'bg-emerald-50 border-emerald-200' : 'bg-gray-50 border-gray-200'}`}>
-      <span className="text-sm text-gray-600">{label}</span>
-      <span className={`font-bold ${bad ? 'text-red-700' : good ? 'text-emerald-700' : ''}`}>{value}</span>
+    <div className={`p-3 rounded text-center ${negative ? 'bg-red-50 border border-red-200' : highlight ? 'bg-emerald-50 border border-emerald-200' : 'bg-slate-50 border border-slate-200'}`}>
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className={`text-lg font-bold ${negative ? 'text-red-700' : highlight ? 'text-emerald-700' : ''}`}>{value}</div>
     </div>
   )
 }
 
-function InsightCard({ insight }: { insight: DeepInsight }) {
+function InsightCard({ insight }: { insight: AnalysisInsight }) {
   const icons = {
-    critical: <XCircle size={16} className="text-red-500" />,
-    warning: <AlertCircle size={16} className="text-amber-500" />,
-    opportunity: <Lightbulb size={16} className="text-blue-500" />,
-    strength: <CheckCircle size={16} className="text-emerald-500" />,
-    tip: <Info size={16} className="text-purple-500" />,
+    critical: <XCircle size={14} className="text-red-500" />,
+    outlier: <AlertCircle size={14} className="text-amber-500" />,
+    benchmark: <Target size={14} className="text-slate-500" />,
+    sensitivity: <TrendingUp size={14} className="text-blue-500" />,
+    opportunity: <Lightbulb size={14} className="text-emerald-500" />,
   }
   const colors = {
     critical: 'bg-red-50 border-red-200',
-    warning: 'bg-amber-50 border-amber-200',
-    opportunity: 'bg-blue-50 border-blue-200',
-    strength: 'bg-emerald-50 border-emerald-200',
-    tip: 'bg-purple-50 border-purple-200',
+    outlier: 'bg-amber-50 border-amber-200',
+    benchmark: 'bg-slate-50 border-slate-200',
+    sensitivity: 'bg-blue-50 border-blue-200',
+    opportunity: 'bg-emerald-50 border-emerald-200',
   }
   
   return (
-    <div className={`p-3 rounded-lg border ${colors[insight.type]}`}>
+    <div className={`p-3 rounded border ${colors[insight.category]}`}>
       <div className="flex items-start gap-2">
-        {icons[insight.type]}
+        <div className="mt-0.5">{icons[insight.category]}</div>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-sm">{insight.title}</div>
-          <p className="text-xs text-gray-600 mt-0.5">{insight.message}</p>
-          {insight.action && <p className="text-xs text-gray-500 mt-1 italic">→ {insight.action}</p>}
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-sm">{insight.title}</span>
+            {insight.value && <span className="text-xs font-mono bg-white px-1.5 py-0.5 rounded">{insight.value}</span>}
+          </div>
+          <p className="text-xs text-slate-600 mt-1">{insight.detail}</p>
         </div>
       </div>
     </div>
   )
 }
 
-function TableSection({ label }: { label: string }) {
-  return (
-    <tr className="bg-[#1e3a5f]">
-      <td colSpan={100} className="px-3 py-1.5 text-white font-semibold text-xs sticky left-0 bg-[#1e3a5f]">{label}</td>
-    </tr>
-  )
-}
-
 function DataRow({ label, values, bold, negative, className = '' }: { label: string; values: number[]; bold?: boolean; negative?: boolean; className?: string }) {
   return (
     <tr className={className}>
-      <td className={`px-3 py-1.5 sticky left-0 ${className || 'bg-white'} ${bold ? 'font-semibold' : 'text-gray-600'} text-sm`}>{label}</td>
+      <td className={`px-3 py-1.5 sticky left-0 ${className || 'bg-white'} ${bold ? 'font-semibold' : 'text-slate-600'}`}>{label}</td>
       {values.map((v, i) => (
-        <td key={i} className={`px-2 py-1.5 text-right font-mono text-sm ${negative && v < 0 ? 'text-red-600' : ''} ${bold ? 'font-semibold' : ''}`}>
+        <td key={i} className={`px-2 py-1.5 text-right font-mono ${negative && v < 0 ? 'text-red-600' : ''} ${bold ? 'font-semibold' : ''}`}>
           ${fmt(Math.abs(v))}
         </td>
       ))}
