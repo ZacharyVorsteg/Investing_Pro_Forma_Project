@@ -809,7 +809,7 @@ function CollapsibleHeader({ title, expanded, onToggle, color }: { title: string
   const colors = { green: 'bg-[#10b981]', red: 'bg-[#ef4444]', blue: 'bg-[#3b82f6]' }
   return (
     <tr className={`${colors[color]} cursor-pointer hover:opacity-90`} onClick={onToggle}>
-      <td className={`px-4 py-2 font-bold text-white text-xs tracking-wider sticky left-0 z-10 ${colors[color]} min-w-[200px]`}>
+      <td className={`px-4 py-2 font-bold text-white text-xs tracking-wider sticky left-0 z-20 ${colors[color]} min-w-[200px] border-r border-white/20`}>
         <div className="flex items-center gap-2">{expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}{title}</div>
       </td>
       <td colSpan={99}></td>
@@ -818,11 +818,13 @@ function CollapsibleHeader({ title, expanded, onToggle, color }: { title: string
 }
 
 function ProjectionRow({ label, values, bold, negative, highlight, indent }: { label: string; values: number[]; bold?: boolean; negative?: boolean; highlight?: 'green' | 'red' | 'blue'; indent?: boolean }) {
-  const bgClass = highlight === 'green' ? 'bg-[#10b981]/10' : highlight === 'red' ? 'bg-[#ef4444]/10' : highlight === 'blue' ? 'bg-[#3b82f6]/10' : ''
+  // Solid opaque backgrounds for sticky column
+  const stickyBg = highlight === 'green' ? 'bg-[#0d2818]' : highlight === 'red' ? 'bg-[#2a1215]' : highlight === 'blue' ? 'bg-[#0f1a2e]' : 'bg-[#0f1419]'
+  const rowBg = highlight === 'green' ? 'bg-[#10b981]/10' : highlight === 'red' ? 'bg-[#ef4444]/10' : highlight === 'blue' ? 'bg-[#3b82f6]/10' : ''
   const textClass = highlight === 'green' ? 'text-[#10b981]' : highlight === 'red' ? 'text-[#ef4444]' : highlight === 'blue' ? 'text-[#3b82f6]' : ''
   return (
-    <tr className={`border-b border-[#1e293b] ${bgClass}`}>
-      <td className={`px-4 py-2 sticky left-0 z-10 min-w-[200px] border-r border-[#2d3748] ${bgClass || 'bg-[#0f1419]'} ${bold ? `font-bold ${textClass || 'text-white'}` : 'text-[#94a3b8]'} ${indent ? 'pl-8' : ''}`}>{label}</td>
+    <tr className={`border-b border-[#1e293b] ${rowBg}`}>
+      <td className={`px-4 py-2 sticky left-0 z-10 min-w-[200px] border-r border-[#2d3748] ${stickyBg} ${bold ? `font-bold ${textClass || 'text-white'}` : 'text-[#94a3b8]'} ${indent ? 'pl-8' : ''}`}>{label}</td>
       {values.map((v, i) => (
         <td key={i} className={`px-3 py-2 text-right ${negative && v < 0 ? 'text-[#ef4444]' : ''} ${bold ? `font-bold ${textClass || 'text-white'}` : 'text-[#94a3b8]'}`}>
           {negative && v < 0 ? `(${fmt(Math.abs(v))})` : `$${fmt(Math.abs(v))}`}
