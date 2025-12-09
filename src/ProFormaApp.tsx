@@ -754,7 +754,7 @@ export function ProFormaApp() {
             <table className="w-full text-sm">
               <thead className="bg-slate-100">
                 <tr>
-                  <th className="px-3 py-2 text-left font-semibold text-slate-700 sticky left-0 bg-slate-100 min-w-[200px]">Line Item</th>
+                  <th className="px-3 py-2 text-left font-semibold text-slate-700 sticky left-0 z-20 bg-slate-100 min-w-[200px] border-r border-slate-200">Line Item</th>
                   {calc.years.map(y => <th key={y.year} className="px-2 py-2 text-right font-semibold text-slate-700 min-w-[90px]">{y.year}</th>)}
                 </tr>
               </thead>
@@ -808,14 +808,14 @@ export function ProFormaApp() {
                 
                 {/* METRICS */}
                 <tr className="bg-slate-200 border-t-2 border-slate-300">
-                  <td className="px-3 py-2 font-bold sticky left-0 bg-slate-200">Cash-on-Cash Return</td>
+                  <td className="px-3 py-2 font-bold sticky left-0 z-10 bg-slate-200 min-w-[200px] border-r border-slate-300">Cash-on-Cash Return</td>
                   {calc.years.map(y => {
                     const coc = calc.totalCashRequired > 0 ? (y.cashFlowBeforeTax / calc.totalCashRequired) * 100 : 0
                     return <td key={y.year} className={`px-2 py-2 text-right font-bold ${coc >= 8 ? 'text-emerald-700' : coc >= 0 ? '' : 'text-red-600'}`}>{fmtDec(coc)}%</td>
                   })}
                 </tr>
                 <tr className="bg-slate-100">
-                  <td className="px-3 py-2 font-semibold sticky left-0 bg-slate-100">Cap Rate (on Purchase)</td>
+                  <td className="px-3 py-2 font-semibold sticky left-0 z-10 bg-slate-100 min-w-[200px] border-r border-slate-200">Cap Rate (on Purchase)</td>
                   {calc.years.map(y => {
                     const cap = inputs.purchasePrice > 0 ? (y.netOperatingIncome / inputs.purchasePrice) * 100 : 0
                     return <td key={y.year} className="px-2 py-2 text-right font-semibold">{fmtDec(cap)}%</td>
@@ -823,7 +823,7 @@ export function ProFormaApp() {
                 </tr>
                 {calc.annualDebtService > 0 && (
                   <tr className="bg-slate-100">
-                    <td className="px-3 py-2 font-semibold sticky left-0 bg-slate-100">DSCR</td>
+                    <td className="px-3 py-2 font-semibold sticky left-0 z-10 bg-slate-100 min-w-[200px] border-r border-slate-200">DSCR</td>
                     {calc.years.map(y => {
                       const dscr = calc.annualDebtService > 0 ? y.netOperatingIncome / calc.annualDebtService : 0
                       return <td key={y.year} className={`px-2 py-2 text-right font-semibold ${dscr >= 1.25 ? 'text-emerald-700' : dscr >= 1 ? 'text-amber-600' : 'text-red-600'}`}>{fmtDec(dscr, 2)}x</td>
@@ -831,7 +831,7 @@ export function ProFormaApp() {
                   </tr>
                 )}
                 <tr className="bg-slate-100">
-                  <td className="px-3 py-2 font-semibold sticky left-0 bg-slate-100">Expense Ratio</td>
+                  <td className="px-3 py-2 font-semibold sticky left-0 z-10 bg-slate-100 min-w-[200px] border-r border-slate-200">Expense Ratio</td>
                   {calc.years.map(y => {
                     const ratio = y.effectiveGrossIncome > 0 ? (y.totalOperatingExpenses / y.effectiveGrossIncome) * 100 : 0
                     return <td key={y.year} className="px-2 py-2 text-right font-semibold">{fmtDec(ratio, 1)}%</td>
@@ -936,20 +936,22 @@ function InsightCard({ insight }: { insight: AnalysisInsight }) {
 function CollapsibleSection({ title, expanded, onToggle, bgColor }: { title: string; expanded: boolean; onToggle: () => void; bgColor: string }) {
   return (
     <tr className={`${bgColor} text-white cursor-pointer hover:opacity-90`} onClick={onToggle}>
-      <td colSpan={100} className={`px-3 py-2 font-semibold text-xs sticky left-0 ${bgColor}`}>
+      <td className={`px-3 py-2 font-semibold text-xs sticky left-0 z-10 ${bgColor} min-w-[200px]`}>
         <div className="flex items-center gap-2">
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           {title}
         </div>
       </td>
+      {/* Empty cells to maintain table structure */}
     </tr>
   )
 }
 
 function DataRow({ label, values, bold, negative, className = '', indent }: { label: string; values: number[]; bold?: boolean; negative?: boolean; className?: string; indent?: boolean }) {
+  const bgClass = className || 'bg-white'
   return (
     <tr className={className}>
-      <td className={`px-3 py-1.5 sticky left-0 ${className || 'bg-white'} ${bold ? 'font-semibold' : 'text-slate-600'} ${indent ? 'pl-8' : ''}`}>{label}</td>
+      <td className={`px-3 py-1.5 sticky left-0 z-10 ${bgClass} ${bold ? 'font-semibold' : 'text-slate-600'} ${indent ? 'pl-8' : ''} min-w-[200px] border-r border-slate-200`}>{label}</td>
       {values.map((v, i) => (
         <td key={i} className={`px-2 py-1.5 text-right font-mono ${negative && v < 0 ? 'text-red-600' : ''} ${bold ? 'font-semibold' : ''}`}>
           {negative && v < 0 ? `($${fmt(Math.abs(v))})` : `$${fmt(Math.abs(v))}`}
