@@ -8,8 +8,7 @@ import { Plus, Trash2, Download, RotateCcw, Printer, XCircle, TrendingUp, AlertC
 interface Unit {
   id: string
   unitNumber: string
-  bedrooms: number
-  bathrooms: number
+  tenant: string // Optional: tenant name, business type, or "Vacant"
   sqft: number
   rent: number
 }
@@ -92,16 +91,16 @@ interface YearProjection {
 // ============================================================================
 
 const createDefaultUnits = (): Unit[] => {
+  const tenants = ['', '', '', '', '', '', 'Vacant', '', '', '', '', '']
   const units: Unit[] = []
   for (let i = 1; i <= 12; i++) {
-    const is2Bed = i === 4 || i === 10
+    const isLarger = i === 4 || i === 10
     units.push({
       id: String(i),
-      unitNumber: `432-${i}`,
-      bedrooms: is2Bed ? 2 : 1,
-      bathrooms: 1,
-      sqft: is2Bed ? 775 : 550,
-      rent: is2Bed ? 1800 : (i === 7 ? 1550 : 1600),
+      unitNumber: `Unit ${i}`,
+      tenant: tenants[i - 1] || '',
+      sqft: isLarger ? 775 : 550,
+      rent: isLarger ? 1800 : (i === 7 ? 1550 : 1600),
     })
   }
   return units
@@ -365,7 +364,7 @@ export function ProFormaApp() {
   const set = <K extends keyof Inputs>(key: K, value: Inputs[K]) => setInputs(prev => ({ ...prev, [key]: value }))
   const setNum = (key: keyof Inputs, value: string) => set(key, (parseFloat(value) || 0) as Inputs[typeof key])
   const updateUnit = (id: string, field: keyof Unit, value: string | number) => set('units', inputs.units.map(u => u.id === id ? { ...u, [field]: typeof value === 'string' && field !== 'unitNumber' ? parseFloat(value) || 0 : value } : u))
-  const addUnit = () => set('units', [...inputs.units, { id: String(Date.now()), unitNumber: `Unit ${inputs.units.length + 1}`, bedrooms: 1, bathrooms: 1, sqft: 550, rent: 1500 }])
+  const addUnit = () => set('units', [...inputs.units, { id: String(Date.now()), unitNumber: `Unit ${inputs.units.length + 1}`, tenant: '', sqft: 550, rent: 1500 }])
   const removeUnit = (id: string) => { if (inputs.units.length > 1) set('units', inputs.units.filter(u => u.id !== id)) }
   const reset = () => { if (confirm('Reset all values?')) setInputs(defaultInputs) }
   const scrollToSection = (section: string) => sectionsRef.current[section]?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -638,33 +637,55 @@ export function ProFormaApp() {
               <thead className="bg-slate-50">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium text-slate-600">Unit</th>
-                  <th className="px-3 py-2 text-center font-medium text-slate-600">Bed</th>
-                  <th className="px-3 py-2 text-center font-medium text-slate-600">Bath</th>
+                  <th className="px-3 py-2 text-left font-medium text-slate-600">Tenant / Use</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-600">SF</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-600">Rent</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-600">Rent/Mo</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-600">$/SF</th>
-                  <th className="px-3 py-2 w-8"></th>
+                  <th className="px-2 py-2 w-10"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {inputs.units.map((unit, idx) => (
                   <tr key={unit.id} className={idx % 2 ? 'bg-slate-50' : ''}>
-                    <td className="px-3 py-1"><input type="text" value={unit.unitNumber} onChange={e => updateUnit(unit.id, 'unitNumber', e.target.value)} className="w-20 px-2 py-1 border border-slate-200 rounded" /></td>
-                    <td className="px-3 py-1 text-center"><input type="number" value={unit.bedrooms} onChange={e => updateUnit(unit.id, 'bedrooms', e.target.value)} className="w-12 px-1 py-1 border border-slate-200 rounded text-center" /></td>
-                    <td className="px-3 py-1 text-center"><input type="number" value={unit.bathrooms} onChange={e => updateUnit(unit.id, 'bathrooms', e.target.value)} className="w-12 px-1 py-1 border border-slate-200 rounded text-center" /></td>
-                    <td className="px-3 py-1 text-right"><input type="number" value={unit.sqft} onChange={e => updateUnit(unit.id, 'sqft', e.target.value)} className="w-16 px-1 py-1 border border-slate-200 rounded text-right" /></td>
-                    <td className="px-3 py-1 text-right"><input type="number" value={unit.rent} onChange={e => updateUnit(unit.id, 'rent', e.target.value)} className="w-20 px-1 py-1 border border-slate-200 rounded text-right" /></td>
-                    <td className="px-3 py-1 text-right text-slate-500">${fmtDec(unit.rent / unit.sqft)}</td>
-                    <td className="px-3 py-1">{inputs.units.length > 1 && <button onClick={() => removeUnit(unit.id)} className="text-slate-400 hover:text-red-500"><Trash2 size={14} /></button>}</td>
+                    <td className="px-3 py-1.5">
+                      <input type="text" value={unit.unitNumber} onChange={e => updateUnit(unit.id, 'unitNumber', e.target.value)} className="w-20 px-2 py-1 border border-slate-200 rounded text-sm" />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input 
+                        type="text" 
+                        value={unit.tenant || ''} 
+                        onChange={e => updateUnit(unit.id, 'tenant', e.target.value)} 
+                        placeholder="Tenant or use..."
+                        className={`w-36 px-2 py-1 border border-slate-200 rounded text-sm ${(unit.tenant || '').toLowerCase() === 'vacant' ? 'text-amber-600 bg-amber-50' : ''}`}
+                      />
+                    </td>
+                    <td className="px-3 py-1.5 text-right">
+                      <input type="number" value={unit.sqft} onChange={e => updateUnit(unit.id, 'sqft', e.target.value)} className="w-16 px-2 py-1 border border-slate-200 rounded text-right text-sm" />
+                    </td>
+                    <td className="px-3 py-1.5 text-right">
+                      <div className="flex items-center justify-end">
+                        <span className="text-slate-400 mr-1 text-sm">$</span>
+                        <input type="number" value={unit.rent} onChange={e => updateUnit(unit.id, 'rent', e.target.value)} className="w-16 px-2 py-1 border border-slate-200 rounded text-right text-sm" />
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-slate-500 font-mono text-sm">${fmtDec(unit.sqft > 0 ? unit.rent / unit.sqft : 0)}</td>
+                    <td className="px-2 py-1.5">
+                      {inputs.units.length > 1 && <button onClick={() => removeUnit(unit.id)} className="text-slate-400 hover:text-red-500 p-1"><Trash2 size={14} /></button>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot className="bg-emerald-50 font-semibold">
+              <tfoot className="bg-emerald-50 font-semibold border-t-2 border-emerald-200">
                 <tr>
-                  <td className="px-3 py-2">Total ({calc.totalUnits})</td><td></td><td></td>
-                  <td className="px-3 py-2 text-right">{fmt(calc.totalSqft)}</td>
+                  <td className="px-3 py-2">Total ({calc.totalUnits} units)</td>
+                  <td className="px-3 py-2 text-slate-500 text-xs">
+                    {inputs.units.filter(u => (u.tenant || '').toLowerCase() === 'vacant').length > 0 && 
+                      `${inputs.units.filter(u => (u.tenant || '').toLowerCase() === 'vacant').length} vacant`
+                    }
+                  </td>
+                  <td className="px-3 py-2 text-right">{fmt(calc.totalSqft)} SF</td>
                   <td className="px-3 py-2 text-right text-emerald-700">${fmt(calc.monthlyRent)}</td>
-                  <td className="px-3 py-2 text-right">${fmtDec(calc.monthlyRent / calc.totalSqft)}</td>
+                  <td className="px-3 py-2 text-right font-mono">${fmtDec(calc.totalSqft > 0 ? calc.monthlyRent / calc.totalSqft : 0)}</td>
                   <td></td>
                 </tr>
               </tfoot>
@@ -839,11 +860,11 @@ function SectionHeader({ title }: { title: string }) {
 
 function QuickInput({ label, value, onChange, prefix, suffix }: { label: string; value: number; onChange: (v: string) => void; prefix?: string; suffix?: string }) {
   return (
-    <div className="flex items-center gap-1 whitespace-nowrap">
+    <div className="flex items-center gap-1.5 whitespace-nowrap">
       <span className="text-slate-400 text-xs">{label}</span>
-      {prefix && <span className="text-slate-500">{prefix}</span>}
-      <input type="number" value={value} onChange={e => onChange(e.target.value)} className="w-20 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-right text-sm" />
-      {suffix && <span className="text-slate-500">{suffix}</span>}
+      {prefix && <span className="text-slate-500 text-sm">{prefix}</span>}
+      <input type="number" value={value} onChange={e => onChange(e.target.value)} className="w-24 px-2 py-1 bg-slate-700 border border-slate-600 rounded text-right text-sm" />
+      {suffix && <span className="text-slate-500 text-sm">{suffix}</span>}
     </div>
   )
 }
@@ -860,11 +881,11 @@ function Metric({ label, value, good, bad }: { label: string; value: string; goo
 function CompactInput({ label, value, onChange, prefix, suffix }: { label: string; value: number; onChange: (v: string) => void; prefix?: string; suffix?: string }) {
   return (
     <div>
-      <label className="block text-xs text-slate-500 mb-0.5">{label}</label>
+      <label className="block text-xs text-slate-500 mb-1">{label}</label>
       <div className="flex items-center border border-slate-300 rounded bg-white">
         {prefix && <span className="pl-2 text-slate-400 text-sm">{prefix}</span>}
-        <input type="number" value={value} onChange={e => onChange(e.target.value)} className="flex-1 px-2 py-1.5 text-right text-sm focus:outline-none" />
-        {suffix && <span className="pr-2 text-slate-400 text-xs">{suffix}</span>}
+        <input type="number" value={value} onChange={e => onChange(e.target.value)} className="w-full min-w-0 px-2 py-2 text-right text-sm focus:outline-none rounded" />
+        {suffix && <span className="pr-2 text-slate-400 text-sm">{suffix}</span>}
       </div>
     </div>
   )
@@ -872,12 +893,12 @@ function CompactInput({ label, value, onChange, prefix, suffix }: { label: strin
 
 function InlineInput({ label, value, onChange, prefix, suffix, compact }: { label: string; value: number; onChange: (v: string) => void; prefix?: string; suffix?: string; compact?: boolean }) {
   return (
-    <div className="flex items-center justify-between py-1 px-2 bg-white rounded border border-slate-100 hover:border-slate-300">
+    <div className="flex items-center justify-between py-1.5 px-2 bg-white rounded border border-slate-100 hover:border-slate-300">
       <span className={`text-slate-600 ${compact ? 'text-xs' : 'text-sm'}`}>{label}</span>
       <div className="flex items-center">
-        {prefix && <span className="text-slate-400 text-xs mr-1">{prefix}</span>}
-        <input type="number" value={value} onChange={e => onChange(e.target.value)} className={`${compact ? 'w-16' : 'w-20'} px-1 py-0.5 border border-slate-200 rounded text-right text-sm`} />
-        {suffix && <span className="text-slate-400 text-xs ml-1">{suffix}</span>}
+        {prefix && <span className="text-slate-400 text-sm mr-1">{prefix}</span>}
+        <input type="number" value={value} onChange={e => onChange(e.target.value)} className={`${compact ? 'w-20' : 'w-24'} px-2 py-1 border border-slate-200 rounded text-right text-sm`} />
+        {suffix && <span className="text-slate-400 text-sm ml-1">{suffix}</span>}
       </div>
     </div>
   )
