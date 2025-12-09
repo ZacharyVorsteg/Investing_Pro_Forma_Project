@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
 
@@ -18,13 +18,33 @@ import { TemplatesPage } from './pages/TemplatesPage'
 import { HelpPage } from './pages/HelpPage'
 
 function App() {
-  const { checkAuth, isLoading } = useAuthStore()
+  const { checkAuth, isAuthenticated } = useAuthStore()
+  const [isHydrated, setIsHydrated] = useState(false)
 
   useEffect(() => {
-    checkAuth()
-  }, [checkAuth])
+    // Wait for zustand to hydrate from localStorage
+    const unsubscribe = useAuthStore.persist.onFinishHydration(() => {
+      setIsHydrated(true)
+    })
+    
+    // If already hydrated
+    if (useAuthStore.persist.hasHydrated()) {
+      setIsHydrated(true)
+    }
 
-  if (isLoading) {
+    return () => {
+      unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isHydrated) {
+      checkAuth()
+    }
+  }, [isHydrated, checkAuth])
+
+  // Show loading while hydrating
+  if (!isHydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -38,9 +58,15 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Auth Routes */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/signup" element={<SignUpPage />} />
+        {/* Auth Routes - accessible when not authenticated */}
+        <Route 
+          path="/login" 
+          element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} 
+        />
+        <Route 
+          path="/signup" 
+          element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <SignUpPage />} 
+        />
 
         {/* Protected Routes */}
         <Route element={<Layout />}>
